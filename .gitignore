@@ -62,3 +62,7 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+
+REPO_ANALYSIS.md
+TEAM_PLAN.md
