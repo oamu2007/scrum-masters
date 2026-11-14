@@ -189,6 +189,84 @@ class TrackingTests(unittest.TestCase):
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("<Channel", str(caught.exception))
 
+    def test_invalid_ball_channel_references_are_rejected_before_streaming(self):
+        cases = ("missing-all", "missing-one", "extra", "wrong-type", "swapped",
+                 "missing-id-0", "missing-id-1", "missing-id-2",
+                 "unknown-id-0", "unknown-id-1", "unknown-id-2")
+        self.write_records([1])
+        for case in cases:
+            with self.subTest(case=case):
+                root = ET.fromstring(METADATA)
+                ball = root.find(".//DataFormatSpecification")[2]
+                if case == "missing-all":
+                    ball[:] = []
+                elif case == "missing-one":
+                    ball.remove(ball[-1])
+                elif case == "extra":
+                    ball.append(copy.deepcopy(ball[-1]))
+                elif case == "wrong-type":
+                    ball[0].tag = "PlayerChannelRef"
+                elif case == "swapped":
+                    ball[0], ball[1] = ball[1], ball[0]
+                elif case.startswith("missing-id"):
+                    ball[int(case[-1])].attrib.clear()
+                else:
+                    ball[int(case[-1])].set("channelId", "unknown")
+                ET.ElementTree(root).write(self.meta, encoding="utf-8")
+                with self.assertRaises(tracking.TrackingDataError) as caught:
+                    next(self.frames(1))
+                self.assertIn(str(self.meta), str(caught.exception))
+                self.assertIn("ball", str(caught.exception))
+
+    def separate_ball_positions(self):
+        """Invented ball-only definitions ensure player checks cannot mask ball gaps."""
+        root = ET.fromstring(METADATA)
+        channels = root.find(".//Channels")
+        ball = root.find(".//DataFormatSpecification")[2]
+        for axis, channel_id in enumerate(("horizontal", "vertical")):
+            channel = copy.deepcopy(root.find(".//Channel[@id='{}']".format(channel_id)))
+            channel.set("id", "ball-" + channel_id)
+            channels.append(channel)
+            ball[axis].set("channelId", channel.get("id"))
+        return root
+
+    def assert_ambiguous_positions_rejected(self, owner):
+        self.write_records([1])
+        for channel_id in ("horizontal", "vertical"):
+            for tag in ("Name", "Unit"):
+                for variant in ("duplicate", "contradictory"):
+                    with self.subTest(owner=owner, channel=channel_id, tag=tag, variant=variant):
+                        root = self.separate_ball_positions()
+                        definition_id = ("ball-" if owner == "ball" else "") + channel_id
+                        channel = root.find(".//Channel[@id='{}']".format(definition_id))
+                        extra = ET.SubElement(channel, tag)
+                        extra.text = (channel.findtext(tag) if variant == "duplicate" else
+                                      "position_z" if tag == "Name" else "m")
+                        ET.ElementTree(root).write(self.meta, encoding="utf-8")
+                        with self.assertRaises(tracking.TrackingDataError) as caught:
+                            next(self.frames(1))
+                        self.assertIn(str(self.meta), str(caught.exception))
+                        self.assertIn("ball" if owner == "ball" else "Player slot",
+                                      str(caught.exception))
+                        self.assertIn("normalized x,y", str(caught.exception))
+
+    def test_ambiguous_player_position_declarations_are_rejected(self):
+        self.assert_ambiguous_positions_rejected("player")
+
+    def test_ambiguous_ball_position_declarations_are_rejected(self):
+        self.assert_ambiguous_positions_rejected("ball")
+
+    def test_distinct_ball_position_channels_are_supported(self):
+        ET.ElementTree(self.separate_ball_positions()).write(self.meta, encoding="utf-8")
+        self.raw.write_text("1:" + OBSERVATIONS.split(":")[0] + ":0.2,0.8,36\n",
+                            encoding="utf-8")
+        frame, = self.frames(1)
+        self.assertEqual(set(frame["ball"]), {"x_norm", "y_norm", "x_m", "y_m"})
+        self.assertEqual((frame["ball"]["x_norm"], frame["ball"]["y_norm"]), (0.2, 0.8))
+        self.assertAlmostEqual(frame["ball"]["x_m"], 21.06)
+        self.assertAlmostEqual(frame["ball"]["y_m"], 54.4)
+        self.assertAlmostEqual(frame["players"][0]["speed_mps"], 2)
+
     def test_reversed_register_slots_are_not_silently_mislabeled(self):
         root = ET.fromstring(METADATA)
         registers = root.find(".//DataFormatSpecification")[1]

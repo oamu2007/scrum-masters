@@ -66,6 +66,14 @@ def _speed_divisor(root, players, meta_path):
             result[key] = element
         return result
 
+    def validate_positions(definitions, context):
+        for channel, name in zip(definitions[:2], ("position_x", "position_y")):
+            names, units = channel.findall("Name"), channel.findall("Unit")
+            if (len(names) != 1 or len(units) != 1 or
+                    (names[0].text, units[0].text) != (name, "normalized")):
+                fail(context + "expected exactly one Name and Unit for normalized x,y "
+                     "channels in that order")
+
     indexed("Player")
     channels = indexed("Channel")
     player_channels = indexed("PlayerChannel")
@@ -96,9 +104,7 @@ def _speed_divisor(root, players, meta_path):
             if link.get("playerId") != player.get("id"):
                 fail(context + "channel references do not match Player order")
             definitions.append(channels[link.get("channelId")])
-        if [(c.findtext("Name"), c.findtext("Unit")) for c in definitions[:2]] != [
-                ("position_x", "normalized"), ("position_y", "normalized")]:
-            fail(context + "expected normalized x,y channels in that order")
+        validate_positions(definitions, context)
         speed = definitions[2]
         names, units = speed.findall("Name"), speed.findall("Unit")
         if len(names) != 1 or not names[0].text:
@@ -113,6 +119,16 @@ def _speed_divisor(root, players, meta_path):
         if speed_declaration is not None and declaration != speed_declaration:
             fail(context + "inconsistent speed declarations across player slots")
         speed_declaration = declaration
+
+    if [ref.tag for ref in spec[2]] != ["BallChannelRef"] * 3:
+        fail("ball: expected three BallChannelRef entries for x,y,speed")
+    ball_definitions = []
+    for ref in spec[2]:
+        channel = channels.get(ref.get("channelId"))
+        if channel is None:
+            fail("ball: missing or unknown channel reference")
+        ball_definitions.append(channel)
+    validate_positions(ball_definitions, "ball: ")
     return divisors[speed_declaration]
 
 
