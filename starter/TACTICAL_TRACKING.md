@@ -61,6 +61,19 @@ supplied bundle has 46 such groups, each matching XML `Player` document order.
 `PlayerChannel` declaration order and IDs are not column order. A register order
 that disagrees with `Player` order is rejected rather than silently relabeling slots.
 
+The ball register must contain exactly three `BallChannelRef` entries. Every
+`channelId`, including the third reference, must resolve to a declared channel.
+The first two must declare normalized `position_x` then normalized `position_y`;
+missing, unknown or swapped references are rejected before streaming. The third
+raw field is still parsed as a number, but ball speed is not exposed publicly.
+
+Each referenced player **and ball** position channel must contain exactly one
+`Name` and exactly one `Unit`, matching the supported position name and
+`normalized` unit. Duplicate declarations are rejected even when their values
+agree; contradictory, missing, empty or unsupported position declarations also
+fail. Separate channel IDs for ball and player positions are supported when
+their declarations meet these same checks. No metadata remapping is performed.
+
 Supported speed declarations are deliberately limited to these exact pairs:
 
 | Channel name | Unit | Conversion to `speed_mps` |
@@ -68,7 +81,8 @@ Supported speed declarations are deliberately limited to these exact pairs:
 | `speed_kph` | `kph` | Divide by 3.6 (supplied export) |
 | `speed_mps` | `m/s` | Retain unchanged (tested invented variant) |
 
-Missing, unsupported, contradictory or inconsistent declarations raise
+Invalid references, ambiguous position declarations, and missing, unsupported,
+contradictory or inconsistent player-speed declarations raise
 `TrackingDataError` before any observation is yielded. This is a validator for this
 export layout, not a general EPTS loader. Unit declarations, rather than plausible
 numerical values or a loader's output convention, determine conversion.
@@ -177,6 +191,40 @@ The existing local review environment was reusable here; its absolute path is no
 a teammate setup requirement. Remote freshness could not be verified (fetch lacked
 permission to write `FETCH_HEAD`; the read-only remote query failed on DNS).
 This is local M3 gate evidence, not independent Module 5 or downstream sign-off.
+
+### Metadata follow-up verification
+
+The two metadata gaps R1/R2 in `M3_M1_REVIEW.md` were addressed in the M3 working
+tree based on corrected commit `e0a0fd2f098194704b0493a2ea335ea3b4b9d06c`.
+Before the fix, **27** invalid invented variants were accepted: 11 malformed ball
+reference layouts and 16 duplicate/contradictory player or ball position
+declarations. The valid fixture with separate ball-position channels passed.
+The new regressions require all invalid variants to fail before yielding a frame.
+
+The public function, schema, player-speed conversion and M1 handoff are unchanged.
+Verification with the existing Python 3.14.7 environment:
+
+- `python -m unittest discover -s tests -v`: **19 M3 tests pass**.
+- `python -m starter.tactical_tracking`: exit 0, **199,319** frames indexed
+  **0..199318**, **46** slots per frame and **113,488** observed-ball frames.
+- A streamed comparison of every complete frame dictionary against `e0a0fd2`
+  found **zero output differences**, covering **9,168,674** player slots as well
+  as ball fields, speed, position, missingness, teams and frame/time alignment.
+- An isolated temporary snapshot of published `integration-attempt` commit
+  `303513da2247387945f00b6c347090f0be65d79e`, overlaid with the M3 follow-up,
+  passed the full **36-test M3/M1 suite** using the same unittest command.
+  The actual integration clone's status, refs, index and relevant files remained
+  unchanged. No M1 implementation adjustment was needed.
+- `git diff --check` passed. Remote freshness remains unverified: fetch could
+  not write `FETCH_HEAD`, and a read-only remote query failed on DNS.
+
+The change is intentionally uncommitted on `module-3-tracking-reader`. Handoff:
+after the M3 owner records and publishes these three M3 files, the integration
+owner should refresh remote refs, inspect any intervening changes, and ordinarily
+merge the updated `origin/module-3-tracking-reader` into `integration-attempt`.
+Rerun its full suite (currently 36 tests) and the tactical verification command.
+No commit, push or merge was performed for this follow-up. Existing
+speed-correction evidence above remains historical evidence for that earlier change.
 
 **Regenerate previous local previews before reuse:** outputs generated with the
 reviewed reader may contain raw km/h values mislabeled as `speed_mps`. Relabeling
