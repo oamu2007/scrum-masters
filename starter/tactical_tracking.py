@@ -20,8 +20,8 @@ class TrackingDataError(ValueError):
     """Invalid metadata or tracking, reported without including source rows."""
 
 
-def _read_slot_teams(meta_path):
-    """Team for each raw column, in XML Player document order (as in baseline.py)."""
+def _read_metadata(meta_path):
+    """Validate this export's slot/channel mapping and source speed unit once."""
     try:
         root = ET.parse(meta_path).getroot()
     except ET.ParseError as error:
@@ -37,7 +37,8 @@ def _read_slot_teams(meta_path):
     # The first Team is home, the second away, following the supplied EPTS convention.
     sides = dict(zip(team_ids, ("H", "A")))
     slot_teams = []
-    for slot, player in enumerate(root.iter("Player"), start=1):
+    players = list(root.iter("Player"))
+    for slot, player in enumerate(players, start=1):
         team_id = player.get("teamId")
         if team_id not in sides:
             raise TrackingDataError(
@@ -46,10 +47,76 @@ def _read_slot_teams(meta_path):
         slot_teams.append(sides[team_id])
     if not slot_teams:
         raise TrackingDataError("{}: no Player track slots".format(meta_path))
-    return slot_teams
+    return slot_teams, _speed_divisor(root, players, meta_path)
 
 
-def _parse_observation(group, pitch, context):
+def _speed_divisor(root, players, meta_path):
+    """Support the supplied x,y,speed registers, not arbitrary EPTS layouts."""
+    def fail(message):
+        raise TrackingDataError("{}: {}".format(meta_path, message))
+
+    def indexed(tag):
+        result = {}
+        for element in root.iter(tag):
+            key = element.get("id")
+            if not key:
+                fail("missing {} ID".format(tag))
+            if key in result:
+                fail("duplicate {} ID".format(tag))
+            result[key] = element
+        return result
+
+    indexed("Player")
+    channels = indexed("Channel")
+    player_channels = indexed("PlayerChannel")
+    specifications = list(root.iter("DataFormatSpecification"))
+    if len(specifications) != 1:
+        fail("expected one DataFormatSpecification")
+    spec = specifications[0]
+    if (spec.get("separator") != ":" or
+            [e.tag for e in spec] != ["StringRegister", "SplitRegister", "SplitRegister"] or
+            spec[1].get("separator") != ";" or spec[2].get("separator") != ","):
+        fail("expected frame:players:ball register layout")
+    groups = list(spec[1])
+    if len(groups) != len(players):
+        fail("player register count does not match Player slots")
+
+    speed_declaration = None
+    divisors = {("speed_kph", "kph"): 3.6, ("speed_mps", "m/s"): 1.0}
+    for slot, (player, group) in enumerate(zip(players, groups), start=1):
+        context = "Player slot {}: ".format(slot)
+        if (group.tag != "SplitRegister" or group.get("separator") != "," or
+                [e.tag for e in group] != ["PlayerChannelRef"] * 3):
+            fail(context + "expected x,y,speed channel references")
+        definitions = []
+        for ref in group:
+            link = player_channels.get(ref.get("playerChannelId"))
+            if link is None or link.get("channelId") not in channels:
+                fail(context + "missing or unknown channel reference")
+            if link.get("playerId") != player.get("id"):
+                fail(context + "channel references do not match Player order")
+            definitions.append(channels[link.get("channelId")])
+        if [(c.findtext("Name"), c.findtext("Unit")) for c in definitions[:2]] != [
+                ("position_x", "normalized"), ("position_y", "normalized")]:
+            fail(context + "expected normalized x,y channels in that order")
+        speed = definitions[2]
+        names, units = speed.findall("Name"), speed.findall("Unit")
+        if len(names) != 1 or not names[0].text:
+            fail(context + "missing or contradictory speed channel name")
+        if len(units) != 1 or not units[0].text:
+            fail(context + "missing or contradictory speed unit declaration")
+        declaration = (names[0].text, units[0].text)
+        if declaration not in divisors:
+            if declaration[0] in ("speed_kph", "speed_mps") and declaration[1] in ("kph", "m/s"):
+                fail(context + "conflicting speed channel name and unit")
+            fail(context + "unsupported speed unit or channel name")
+        if speed_declaration is not None and declaration != speed_declaration:
+            fail(context + "inconsistent speed declarations across player slots")
+        speed_declaration = declaration
+    return divisors[speed_declaration]
+
+
+def _parse_observation(group, pitch, context, speed_divisor=1.0):
     fields = group.split(",")
     if len(fields) != 3:
         raise TrackingDataError("{}: expected x,y,speed (three fields)".format(context))
@@ -66,14 +133,14 @@ def _parse_observation(group, pitch, context):
         "y_norm": y,
         "x_m": x * pitch[0] if observed else None,
         "y_m": y * pitch[1] if observed else None,
-        "speed_mps": speed if math.isfinite(speed) else None,
+        "speed_mps": speed / speed_divisor if math.isfinite(speed) else None,
         "observed": observed,
     }
 
 
 def _iter_frames(meta_path, raw_path, expected_count, fps, pitch):
     """Internal entry point allowing small invented files in tests."""
-    slot_teams = _read_slot_teams(meta_path)
+    slot_teams, speed_divisor = _read_metadata(meta_path)
     record = 0
     # Decode per record so even encoding errors identify the offending line safely.
     with open(raw_path, "rb") as handle:
@@ -106,7 +173,8 @@ def _iter_frames(meta_path, raw_path, expected_count, fps, pitch):
                     context, len(groups), len(slot_teams)))
             players = []
             for slot, (team, group) in enumerate(zip(slot_teams, groups), start=1):
-                player = _parse_observation(group, pitch, "{}: player slot {}".format(context, slot))
+                player = _parse_observation(group, pitch, "{}: player slot {}".format(context, slot),
+                                            speed_divisor)
                 player.update(track_slot=slot, team=team)
                 players.append(player)
             ball = _parse_observation(parts[2], pitch, "{}: ball".format(context))
@@ -127,6 +195,8 @@ def iter_tracking_frames(game=GAME, data_dir=None):
 
     track_slot is the one-based position in XML Player order, stable within this export.
     Missing positions have all four coordinates None. Speed is independently nullable.
+    Metadata channels/slot order are validated first; speed_mps is converted once
+    from declared kph (or retained unchanged for declared m/s).
     ball is None when either coordinate is nonfinite. Finite coordinates are not clamped.
     Errors are raised during iteration. Exhaust the iterator to verify the final count.
     """

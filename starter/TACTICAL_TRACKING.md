@@ -4,6 +4,9 @@ Run examples from the repository root with Python 3.8 or newer. This module uses
 standard library. It reads the tactical XML/TXT pair through the existing `games.py`
 helpers and streams one frame at a time.
 
+This is M3's **proposed stable handoff contract** for Modules 1 and 4. It does not
+claim that downstream adapters or evidence interfaces are agreed or implemented.
+
 ```python
 from starter.tactical_tracking import iter_tracking_frames
 
@@ -34,7 +37,7 @@ Each player dictionary contains these fields.
 | `team` | `H` or `A`, resolved from `teamId`. The first metadata `Team` is home and the second is away. |
 | `x_norm`, `y_norm` | Supplied normalized pitch coordinates |
 | `x_m`, `y_m` | Normalized coordinates multiplied by the configured pitch length and width, currently 105.3 and 68 m |
-| `speed_mps` | Supplied speed in metres per second, independently nullable |
+| `speed_mps` | Finite source player speed converted once to metres per second, independently nullable |
 | `observed` | `True` when both supplied position coordinates are finite |
 
 If either player coordinate is NaN or infinite, **all four position fields are `None`**
@@ -42,9 +45,53 @@ and `observed` is `False`. The slot stays in the list. A finite speed is retaine
 when position is missing. A nonfinite speed becomes `None` without hiding a valid position.
 Finite coordinates outside 0–1 are retained. An observed `(0, 0)` is a valid position.
 
+### Source channels and speed units
+
+The supplied tactical XML declares `position_x` and `position_y` with unit
+`normalized`, followed by `speed_kph` with unit `kph`. The third raw field in each
+player group is therefore **km/h**, not m/s. The reader divides it by **3.6**:
+raw `36` becomes `speed_mps = 10.0`. Consumers must not divide it again.
+Nonfinite speed becomes `None`; position and speed availability remain independent.
+The ball still exposes only coordinates, never speed.
+
+Before opening the raw stream, the reader resolves each `PlayerChannelRef` through
+`PlayerChannel` to its `Channel` definition. It requires x/y/speed order, normalized
+position units, and a consistent speed declaration across every player slot. The
+supplied bundle has 46 such groups, each matching XML `Player` document order.
+`PlayerChannel` declaration order and IDs are not column order. A register order
+that disagrees with `Player` order is rejected rather than silently relabeling slots.
+
+Supported speed declarations are deliberately limited to these exact pairs:
+
+| Channel name | Unit | Conversion to `speed_mps` |
+|---|---|---|
+| `speed_kph` | `kph` | Divide by 3.6 (supplied export) |
+| `speed_mps` | `m/s` | Retain unchanged (tested invented variant) |
+
+Missing, unsupported, contradictory or inconsistent declarations raise
+`TrackingDataError` before any observation is yielded. This is a validator for this
+export layout, not a general EPTS loader. Unit declarations, rather than plausible
+numerical values or a loader's output convention, determine conversion.
+
 For an invented example, `(0.5, 0.5)` becomes `(52.65, 34)` metres. For homography
 projection, pass the **normalized** coordinates to `project(H[frame], x_norm, y_norm)`
 and check that frame's `valid` flag first. See [the homography helper](load_homography.py).
+
+An invented observation excerpt illustrates the unchanged schema; remaining slots
+are omitted here only. A raw player group `0.5,0.5,36` with km/h metadata yields:
+
+```python
+{
+    "frame": 0,
+    "time_s": 0.0,
+    "players": [{
+        "track_slot": 1, "team": "H", "observed": True,
+        "x_norm": 0.5, "y_norm": 0.5,
+        "x_m": 52.65, "y_m": 34.0, "speed_mps": 10.0,
+    }],
+    "ball": None,
+}
+```
 
 ## Sharing the same observation between Modules 1 and 4
 
@@ -65,6 +112,13 @@ its own dictionaries and player list, so advancing the iterator leaves earlier f
 intact. Keeping all frames in a list will use substantially more memory than processing
 them as they arrive.
 
+M1 can read `team`, `observed` and metre coordinates to compute team proximity
+evidence. M4 can read those same positions and the independently nullable
+`speed_mps` for movement evidence, keeping any small history in its own state.
+Neither consumer should add fields, alter lists or replace missing values in the
+shared frame. An observed position does not guarantee speed availability, and a
+finite speed does not guarantee a position or persistent player identity.
+
 ## Verification
 
 ```powershell
@@ -78,7 +132,8 @@ complete input, prints only aggregate counts and coverage, and exits with status
 on invalid input. Tests use tiny invented fixtures in temporary directories and need
 neither match files nor ground-truth labels.
 
-The reader checks every tracking ID in order, the number of player groups on each row,
+The reader checks metadata channels/units and slot mapping before streaming, then
+every tracking ID in order, the number of player groups on each row,
 all numeric fields and the total record count. It validates the ball's three input
 fields even though only ball coordinates are exposed. Unknown metadata team references,
 blank lines and malformed rows raise `TrackingDataError`, a `ValueError` subclass.
@@ -96,3 +151,33 @@ The large corrected-tracking offsets in `games.py` do not enter participant ATD 
 Local verification on November 6, 2026 passed all nine fixture tests and read 199,319
 tactical frames, indices 0 through 199318, with 46 slots per frame. The ball was observed
 on 113,488 frames (56.9%), matching [DATA.md](../DATA.md).
+
+The speed correction was verified locally on the working tree based on reviewed
+commit `a7ab2b1f224d9eb575d5aacc804c0fa3a4b2fe5c`:
+
+- All **15** invented fixture tests pass, including the regression that failed on
+  the reviewed code (`36` was returned instead of `10`), zero/nonfinite speed,
+  independent missingness, channel/slot mapping and m/s without double conversion.
+- The verification command exits 0 after all **199,319** frames, indices
+  **0..199318**, with **46** slots each and **113,488** observed-ball frames.
+- A streamed local comparison against that reviewed implementation checks every
+  position, missingness flag, ball, team, slot and frame/time value: **zero changes**.
+  All **3,412,124** finite raw player speeds match division by 3.6; all
+  **5,756,550** nonfinite speeds remain `None`.
+- Pre-match **11,185**, first-half **79,467**, halftime **20,156**, second-half
+  **79,390** and post-match **9,121** frames are retained.
+- An invented duplicate-ID input returns process exit status **1**. Missing or
+  unsupported unit declarations also fail before streaming.
+
+These checks used Python **3.14.7** with no additional reader dependencies. The
+commands above use `python` for portability; if Windows aliases cannot launch,
+use a working interpreter explicitly, for example
+`& "C:\path\to\env\Scripts\python.exe" -m unittest discover -s tests -v`.
+The existing local review environment was reusable here; its absolute path is not
+a teammate setup requirement. Remote freshness could not be verified (fetch lacked
+permission to write `FETCH_HEAD`; the read-only remote query failed on DNS).
+This is local M3 gate evidence, not independent Module 5 or downstream sign-off.
+
+**Regenerate previous local previews before reuse:** outputs generated with the
+reviewed reader may contain raw km/h values mislabeled as `speed_mps`. Relabeling
+those values as already converted m/s would preserve the defect.

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout, redirect_stderr
 from unittest.mock import patch
 
@@ -15,13 +16,45 @@ import games
 from starter import tactical_tracking as tracking
 
 
-METADATA = """<EPTS><Teams>
+METADATA = """<EPTS><Metadata><Teams>
   <Team id="blue"><Name>Home Example</Name></Team>
   <Team id="red"><Name>Away Example</Name></Team>
 </Teams><Players>
   <Player id="z" teamId="red"/><Player id="a" teamId="blue"/>
-</Players></EPTS>"""
-OBSERVATIONS = "0.5,0.5,2;1.2,-0.1,3:0.5,0.5,NaN"
+</Players><Devices><Device><Sensors><Sensor><Channels>
+  <Channel id="horizontal"><Name>position_x</Name><Unit>normalized</Unit></Channel>
+  <Channel id="vertical"><Name>position_y</Name><Unit>normalized</Unit></Channel>
+  <Channel id="pace"><Name>speed_kph</Name><Unit>kph</Unit></Channel>
+</Channels></Sensor></Sensors></Device></Devices><PlayerChannels>
+  <PlayerChannel id="a-speed" playerId="a" channelId="pace"/>
+  <PlayerChannel id="z-y" playerId="z" channelId="vertical"/>
+  <PlayerChannel id="a-x" playerId="a" channelId="horizontal"/>
+  <PlayerChannel id="z-speed" playerId="z" channelId="pace"/>
+  <PlayerChannel id="a-y" playerId="a" channelId="vertical"/>
+  <PlayerChannel id="z-x" playerId="z" channelId="horizontal"/>
+</PlayerChannels></Metadata><DataFormatSpecifications>
+<DataFormatSpecification separator=":">
+  <StringRegister name="frameCount"/>
+  <SplitRegister separator=";">
+    <SplitRegister separator=",">
+      <PlayerChannelRef playerChannelId="z-x"/>
+      <PlayerChannelRef playerChannelId="z-y"/>
+      <PlayerChannelRef playerChannelId="z-speed"/>
+    </SplitRegister>
+    <SplitRegister separator=",">
+      <PlayerChannelRef playerChannelId="a-x"/>
+      <PlayerChannelRef playerChannelId="a-y"/>
+      <PlayerChannelRef playerChannelId="a-speed"/>
+    </SplitRegister>
+  </SplitRegister>
+  <SplitRegister separator=",">
+    <BallChannelRef channelId="horizontal"/>
+    <BallChannelRef channelId="vertical"/>
+    <BallChannelRef channelId="pace"/>
+  </SplitRegister>
+</DataFormatSpecification></DataFormatSpecifications></EPTS>"""
+# Raw fixture speeds are km/h: these deliberately represent 2 and 3 m/s.
+OBSERVATIONS = "0.5,0.5,7.2;1.2,-0.1,10.8:0.5,0.5,NaN"
 
 
 class TrackingTests(unittest.TestCase):
@@ -58,7 +91,8 @@ class TrackingTests(unittest.TestCase):
             self.assertEqual(point["y_norm"], 0.5)
             self.assertEqual(point["x_m"], 52.65)
             self.assertEqual(point["y_m"], 34)
-        self.assertEqual(first["players"][0]["speed_mps"], 2)
+        self.assertAlmostEqual(first["players"][0]["speed_mps"], 2)
+        self.assertAlmostEqual(first["players"][1]["speed_mps"], 3)
         self.assertEqual(first["players"][1]["x_norm"], 1.2)
         self.assertAlmostEqual(first["players"][1]["y_m"], -6.8)
         second["players"][0]["x_m"] = -123
@@ -68,9 +102,9 @@ class TrackingTests(unittest.TestCase):
 
     def test_missing_position_and_speed_are_independent(self):
         self.raw.write_text(
-            "1:NaN,0.5,7;0.5,0.5,NaN:0.1,inf,2\n"
+            "1:NaN,0.5,25.2;0.5,0.5,NaN:0.1,inf,2\n"
             "2:0.2,-inf,NaN;NaN,NaN,inf:NaN,NaN,NaN\n"
-            "3:inf,0.3,4;0,0,0:NaN,0.5,1\n", encoding="utf-8")
+            "3:inf,0.3,14.4;0,0,0:NaN,0.5,1\n", encoding="utf-8")
         first, second, third = list(self.frames(3))
         self.assertIsNone(first["ball"])
         self.assertIsNone(second["ball"])
@@ -79,12 +113,101 @@ class TrackingTests(unittest.TestCase):
             self.assertFalse(player["observed"])
             for field in ("x_norm", "y_norm", "x_m", "y_m"):
                 self.assertIsNone(player[field])
-        self.assertEqual(first["players"][0]["speed_mps"], 7)
+        self.assertAlmostEqual(first["players"][0]["speed_mps"], 7)
+        self.assertAlmostEqual(third["players"][0]["speed_mps"], 4)
         self.assertTrue(first["players"][1]["observed"])
         self.assertIsNone(first["players"][1]["speed_mps"])
         self.assertTrue(third["players"][1]["observed"])
         self.assertEqual(third["players"][1]["x_m"], 0)
         self.assertTrue(all(p["speed_mps"] is None for p in second["players"]))
+        self.assertEqual(third["players"][1]["speed_mps"], 0)
+
+    def test_kph_regression(self):
+        self.raw.write_text("1:0.5,0.5,36;0,0,0:0.5,0.5,36\n", encoding="utf-8")
+        frame, = self.frames(1)
+        self.assertAlmostEqual(frame["players"][0]["speed_mps"], 10)
+        self.assertEqual(frame["players"][1]["speed_mps"], 0)
+        self.assertEqual(set(frame["ball"]), {"x_norm", "y_norm", "x_m", "y_m"})
+
+    def test_mps_is_not_converted_again(self):
+        self.meta.write_text(METADATA.replace("speed_kph", "speed_mps").replace(
+            "<Unit>kph</Unit>", "<Unit>m/s</Unit>"), encoding="utf-8")
+        self.raw.write_text("1:0.5,0.5,10;0,0,36:0,0,0\n", encoding="utf-8")
+        frame, = self.frames(1)
+        self.assertAlmostEqual(frame["players"][0]["speed_mps"], 10)
+        self.assertAlmostEqual(frame["players"][1]["speed_mps"], 36)
+
+    def test_nonfinite_speeds_keep_valid_positions(self):
+        for value in ("NaN", "inf", "-inf"):
+            with self.subTest(value=value):
+                self.raw.write_text("1:0.5,0.5,{};0,0,0:0,0,0\n".format(value),
+                                    encoding="utf-8")
+                frame, = self.frames(1)
+                self.assertTrue(frame["players"][0]["observed"])
+                self.assertEqual(frame["players"][0]["x_m"], 52.65)
+                self.assertIsNone(frame["players"][0]["speed_mps"])
+
+    def test_invalid_channel_metadata_is_rejected_before_streaming(self):
+        def change(attribute, value):
+            return lambda root: root.find(".//PlayerChannelRef").set(attribute, value)
+
+        cases = [
+            (lambda r: r.find(".//Channel[@id='pace']").remove(
+                r.find(".//Channel[@id='pace']/Unit")), "speed unit"),
+            (lambda r: setattr(r.find(".//Channel[@id='pace']/Unit"), "text", ""),
+             "speed unit"),
+            (lambda r: ET.SubElement(r.find(".//Channel[@id='pace']"), "Unit").__setattr__(
+                "text", "m/s"), "contradictory speed unit"),
+            (lambda r: setattr(r.find(".//Channel[@id='pace']/Unit"), "text", "mph"),
+             "speed unit"),
+            (lambda r: setattr(r.find(".//Channel[@id='pace']/Unit"), "text", "m/s"),
+             "conflicting speed"),
+            (lambda r: r.find(".//Channel[@id='pace']").remove(
+                r.find(".//Channel[@id='pace']/Name")), "speed channel"),
+            (change("playerChannelId", "missing"), "channel reference"),
+            (change("playerChannelId", "a-x"), "Player order"),
+            (change("playerChannelId", "z-y"), "x,y"),
+            (lambda r: r.find(".//PlayerChannels").append(
+                copy.deepcopy(r.find(".//PlayerChannel"))), "duplicate PlayerChannel"),
+            (lambda r: r.find(".//Channels").append(
+                copy.deepcopy(r.find(".//Channel"))), "duplicate Channel"),
+            (lambda r: r.find(".//DataFormatSpecifications").clear(), "DataFormatSpecification"),
+            (lambda r: r.find(".//DataFormatSpecification").set("separator", "|"),
+             "frame:players:ball"),
+            (lambda r: r.find(".//Channel[@id='horizontal']/Unit").__setattr__(
+                "text", "m"), "normalized x,y"),
+        ]
+        for modify, message in cases:
+            with self.subTest(message=message):
+                root = ET.fromstring(METADATA)
+                modify(root)
+                ET.ElementTree(root).write(self.meta, encoding="utf-8")
+                # No raw file exists: metadata must fail before opening it or yielding frames.
+                with self.assertRaises(tracking.TrackingDataError) as caught:
+                    next(self.frames(1))
+                self.assertIn(str(self.meta), str(caught.exception))
+                self.assertIn(message, str(caught.exception))
+                self.assertNotIn("<Channel", str(caught.exception))
+
+    def test_reversed_register_slots_are_not_silently_mislabeled(self):
+        root = ET.fromstring(METADATA)
+        registers = root.find(".//DataFormatSpecification")[1]
+        registers[:] = list(reversed(registers))
+        ET.ElementTree(root).write(self.meta, encoding="utf-8")
+        with self.assertRaisesRegex(tracking.TrackingDataError, "Player order"):
+            next(self.frames(1))
+
+    def test_slot_speed_declarations_must_agree(self):
+        root = ET.fromstring(METADATA)
+        channels = root.find(".//Channels")
+        ET.SubElement(channels, "Channel", id="other-speed")
+        other = channels[-1]
+        ET.SubElement(other, "Name").text = "speed_mps"
+        ET.SubElement(other, "Unit").text = "m/s"
+        root.find(".//PlayerChannel[@id='a-speed']").set("channelId", "other-speed")
+        ET.ElementTree(root).write(self.meta, encoding="utf-8")
+        with self.assertRaisesRegex(tracking.TrackingDataError, "inconsistent speed"):
+            next(self.frames(1))
 
     def test_every_id_is_checked(self):
         for ids, bad_record in [([0, 1, 2], 1), ([2, 3, 4], 1), ([1, 1, 3], 2),
@@ -191,6 +314,19 @@ class TrackingTests(unittest.TestCase):
         with patch.dict(games.SOURCES["tactical"], n_video_frames=2), redirect_stderr(error):
             self.assertEqual(tracking.main(["--data-dir", self.temp.name]), 1)
         self.assertIn("record 2", error.getvalue())
+        result = subprocess.run(
+            [sys.executable, "-m", "starter.tactical_tracking", "--data-dir", self.temp.name],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL", result.stderr)
+        self.assertIn("record 2", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.meta.write_text(METADATA.replace("<Unit>kph</Unit>", "<Unit>mph</Unit>"),
+                             encoding="utf-8")
+        error = io.StringIO()
+        with redirect_stderr(error):
+            self.assertEqual(tracking.main(["--data-dir", self.temp.name]), 1)
+        self.assertIn("unsupported speed unit", error.getvalue())
 
 
 if __name__ == "__main__":
