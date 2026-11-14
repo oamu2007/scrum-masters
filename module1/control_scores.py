@@ -1,17 +1,8 @@
-"""Module 1 - which team looks in control.
+"""Module 1 - current proximity evidence with explicit per-team availability.
 
-For every video frame, writes two scores in [0, 1]: one for Barcelona (home) and one for
-Athletic (away). The score of a team is exp(-d / tau), where d is the distance in metres from the
-ball to that team's nearest tracked player. No ball -> both scores 0 (nobody gets an advantage).
-
-Place this file at <repo>/module1/control_scores.py and run from the repo root:
-
-    python module1/control_scores.py --out control_scores.csv
-
-Output columns:  frame, ball_visible, d_home, d_away, score_home, score_away
-  - frame is the video frame / submission row (0-based), as everywhere else in the project.
-  - d_* are in metres, empty when there is no ball or no tracked player for that team.
-  - ball_visible (0/1) lets Module 2 tell "no ball" apart from "ball far from everyone".
+Consume corrected Module 3 observations; distances and tau are in metres.
+Use score_frame, iter_control_scores or build_evidence for inference. The rounded
+CLI CSV is diagnostic only. See CONTROL_SCORES.md for the handoff contract.
 """
 
 import argparse
@@ -21,27 +12,22 @@ import sys
 
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = HERE if os.path.exists(os.path.join(HERE, "games.py")) else os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "starter"))
+if __package__ in (None, ""):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from games import GAME, GAMES, require, source_frames  # noqa: E402
-from baseline import team_of_each_track  # noqa: E402  (0 = home slot, 1 = away slot)
+from games import GAME, GAMES, source_frames  # noqa: E402
+from starter.tactical_tracking import iter_tracking_frames  # noqa: E402
 
-FIELD_SEP = ":"
-GROUP_SEP = ";"
-MISSING = "N"  # first letter of "NaN"
 HOME, AWAY = 0, 1
 
 
-def parse_xy(group, length, width):
-    """'x,y,speed' (normalised) -> (x_m, y_m), or None if missing."""
-    if group[0] == MISSING:
-        return None
-    c1 = group.index(",")
-    c2 = group.index(",", c1 + 1)
-    return float(group[:c1]) * length, float(group[c1 + 1:c2]) * width
+def _validate_tau(tau):
+    try:
+        valid = math.isfinite(tau) and tau > 0
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError("tau must be finite and strictly positive (metres)")
 
 
 def min_dist_per_team(ball, players, team_of_slot):
@@ -61,50 +47,106 @@ def min_dist_per_team(ball, players, team_of_slot):
 
 def distance_to_score(d, tau):
     """d = inf (no ball / no players) -> 0."""
+    _validate_tau(tau)
     return 0.0 if math.isinf(d) else math.exp(-d / tau)
 
 
-def build(tau=3.0, game=GAME, data_dir=None):
-    meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
+def _metre_position(point):
+    if point is None:
+        return None
+    x, y = point.get("x_m"), point.get("y_m")
+    if x is None or y is None or not (math.isfinite(x) and math.isfinite(y)):
+        return None
+    return x, y
+
+
+def score_frame(observation, tau=3.0):
+    """Return seven named evidence fields without modifying an M3 observation.
+
+    Availability requires a finite ball position and at least one observed finite
+    player position on that side. Speed and persistent identities are not needed.
+    Unavailable distances are NaN; scores are zero with availability False.
+    """
+    _validate_tau(tau)
+    ball = _metre_position(observation["ball"])
+    result = dict(ball_visible=ball is not None, d_home=math.nan, d_away=math.nan,
+                  score_home=0.0, score_away=0.0,
+                  home_available=False, away_available=False)
+    if ball is None:
+        return result
+
+    players, team_of_slot = [], []
+    available = [False, False]
+    for player in observation["players"]:
+        position = _metre_position(player) if player["observed"] else None
+        if position is None:
+            continue
+        if player["team"] not in ("H", "A"):
+            raise ValueError("observed player team must be H or A")
+        team = HOME if player["team"] == "H" else AWAY
+        # Local tuple indices adapt the existing helper; they do not identify people.
+        players.append((len(team_of_slot), *position))
+        team_of_slot.append(team)
+        available[team] = True
+
+    distances = min_dist_per_team(ball, players, team_of_slot)
+    for team, side in enumerate(("home", "away")):
+        if available[team]:
+            result[side + "_available"] = True
+            result["d_" + side] = distances[team]
+            result["score_" + side] = distance_to_score(distances[team], tau)
+    return result
+
+
+def iter_control_scores(tau=3.0, game=GAME, data_dir=None):
+    """Yield frame plus the seven evidence fields, retaining no frame history.
+
+    Exhaust this iterator to complete M3's final record-count validation.
+    """
+    _validate_tau(tau)
+    observations = iter_tracking_frames(game=game, data_dir=data_dir)
+    try:
+        for observation in observations:
+            yield dict(frame=observation["frame"], **score_frame(observation, tau))
+    finally:
+        observations.close()
+
+
+def build_evidence(tau=3.0, game=GAME, data_dir=None):
+    """Build named full-precision arrays indexed by tactical frame, including availability."""
+    _validate_tau(tau)
     n_frames = source_frames("tactical", game)
-    length, width = GAMES[game]["pitch"]
-    team_of_slot = team_of_each_track(meta_path)
-
-    d_home = np.full(n_frames, np.nan)
-    d_away = np.full(n_frames, np.nan)
-    visible = np.zeros(n_frames, dtype=np.int8)
-    s_home = np.zeros(n_frames)
-    s_away = np.zeros(n_frames)
-
-    with open(raw_path) as handle:
-        for line in handle:
-            parts = line.split(FIELD_SEP)
-            if len(parts) != 3:
-                continue
-            frame = int(parts[0]) - 1  # frame_id counts from 1, submission from 0
-            ball = parse_xy(parts[2], length, width)
-            if ball is None:
-                continue  # no ball: scores stay 0/0, distances NaN
-
-            players = []
-            for slot, group in enumerate(parts[1].split(GROUP_SEP)):
-                xy = parse_xy(group, length, width)
-                if xy is not None:
-                    players.append((slot, xy[0], xy[1]))
-
-            dh, da = min_dist_per_team(ball, players, team_of_slot)
-            visible[frame] = 1
-            if not math.isinf(dh):
-                d_home[frame] = dh
-            if not math.isinf(da):
-                d_away[frame] = da
-            s_home[frame] = distance_to_score(dh, tau)
-            s_away[frame] = distance_to_score(da, tau)
-
-    return visible, d_home, d_away, s_home, s_away
+    arrays = {name: np.full(n_frames, np.nan) for name in ("d_home", "d_away")}
+    arrays.update({name: np.zeros(n_frames) for name in ("score_home", "score_away")})
+    arrays.update({name: np.zeros(n_frames, dtype=bool) for name in (
+        "ball_visible", "home_available", "away_available")})
+    count = 0
+    for count, evidence in enumerate(iter_control_scores(tau, game, data_dir), start=1):
+        frame = evidence["frame"]
+        if frame != count - 1 or frame >= n_frames:
+            raise ValueError("control evidence must have sequential tactical frame indices")
+        for name, array in arrays.items():
+            array[frame] = evidence[name]
+    if count != n_frames:
+        raise ValueError("control evidence count does not match tactical frame count")
+    return arrays
 
 
-def write_csv(path, visible, d_home, d_away, s_home, s_away):
+def build(tau=3.0, game=GAME, data_dir=None):
+    """Compatibility five-array tuple; use build_evidence to retain availability."""
+    evidence = build_evidence(tau, game, data_dir)
+    return (evidence["ball_visible"].astype(np.int8), evidence["d_home"], evidence["d_away"],
+            evidence["score_home"], evidence["score_away"])
+
+
+def write_csv(path, visible, d_home, d_away, s_home, s_away, *,
+              home_available=None, away_available=None):
+    """Write rounded diagnostics, never canonical inference input.
+
+    Legacy calls retain six columns. Supplying both availability arrays appends two.
+    """
+    if (home_available is None) != (away_available is None):
+        raise ValueError("supply both availability arrays or neither")
     folder = os.path.dirname(path)
     if folder and not os.path.isdir(folder):
         os.makedirs(folder)
@@ -113,10 +155,15 @@ def write_csv(path, visible, d_home, d_away, s_home, s_away):
         return "" if np.isnan(v) else "{:.3f}".format(v)
 
     with open(path, "w") as out:
-        out.write("frame,ball_visible,d_home,d_away,score_home,score_away\n")
+        extra = home_available is not None
+        out.write("frame,ball_visible,d_home,d_away,score_home,score_away" +
+                  (",home_available,away_available" if extra else "") + "\n")
         for i in range(len(visible)):
-            out.write("{},{},{},{},{:.4f},{:.4f}\n".format(
-                i, visible[i], fmt(d_home[i]), fmt(d_away[i]), s_home[i], s_away[i]))
+            row = "{},{},{},{},{:.4f},{:.4f}".format(
+                i, int(visible[i]), fmt(d_home[i]), fmt(d_away[i]), s_home[i], s_away[i])
+            if extra:
+                row += ",{},{}".format(int(home_available[i]), int(away_available[i]))
+            out.write(row + "\n")
 
 
 def _self_test():
@@ -135,19 +182,32 @@ def _self_test():
     print("self-test OK")
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default="control_scores.csv")
     parser.add_argument("--tau", type=float, default=3.0,
                         help="metres at which a score falls to 1/e (default 3)")
     parser.add_argument("--test", action="store_true", help="run the self-test and exit")
-    args = parser.parse_args()
+    parser.add_argument("--game", choices=sorted(GAMES), default=GAME)
+    parser.add_argument("--data-dir", help="bundle root containing tactical/")
+    args = parser.parse_args(argv)
 
     if args.test:
         _self_test()
-        sys.exit(0)
+        return 0
 
-    arrays = build(tau=args.tau)
-    write_csv(args.out, *arrays)
-    seen = int(arrays[0].sum())
-    print("wrote {} ({} frames, ball visible on {})".format(args.out, len(arrays[0]), seen))
+    try:
+        evidence = build_evidence(tau=args.tau, game=args.game, data_dir=args.data_dir)
+        write_csv(args.out, evidence["ball_visible"], evidence["d_home"], evidence["d_away"],
+                  evidence["score_home"], evidence["score_away"],
+                  home_available=evidence["home_available"], away_available=evidence["away_available"])
+    except (OSError, ValueError) as error:
+        print("FAIL  {}".format(error), file=sys.stderr)
+        return 1
+    print("wrote diagnostic CSV {} ({} frames, ball visible on {})".format(
+        args.out, len(evidence["ball_visible"]), int(evidence["ball_visible"].sum())))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
