@@ -18,7 +18,7 @@ def periodosDetenido(n_frames, restart_windows_list):
 # Para usar esta funcion hagan un file llamado main en donde extraigan los datos del CSV
 # del modulo 1 en variables, esas variables se las pasan a esta funcion
 
-def modulo_2(s_home, s_away, visible_ball, restart_windows_list, total_frames, valid_halves_mask=None):
+def modulo2(s_home, s_away, visible_ball, restart_windows_list, total_frames, valid_halves_mask=None):
     # Transformamos las ventanas del modulo 4 en un arreglo de paradas por frame
     noEnJuego = periodosDetenido(total_frames, restart_windows_list)
     etiquetas = []
