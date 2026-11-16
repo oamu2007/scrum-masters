@@ -187,7 +187,7 @@ def write_submission(path, labels):
     os.makedirs(folder, exist_ok=True)
     tmp = path + ".tmp"
     try:
-        with open(tmp, "w", newline="\n") as handle:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
             handle.write("frame,label\n")
             handle.writelines("{},{}\n".format(i, label) for i, label in enumerate(labels))
         os.replace(tmp, path)

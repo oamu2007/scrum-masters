@@ -7,6 +7,7 @@ behaviour: single read, frame-order checks, evidence validation, per-half decodi
     python -m unittest discover -s tests -v
 """
 
+import hashlib
 import os
 import sys
 import tempfile
@@ -320,6 +321,78 @@ class OutputTests(unittest.TestCase):
                     rp.write_submission(path, ["A", "A"])
             with open(path, newline="") as handle:
                 self.assertEqual(handle.read(), "frame,label\n0,H\n1,A\n")
+
+    def test_failure_while_writing_keeps_the_previous_file_and_leaves_no_temporary(self):
+        def broken_labels():
+            yield "A"
+            yield "A"
+            raise RuntimeError("labels failed halfway")
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "out.csv")
+            rp.write_submission(path, ["H", "A", "D"])
+            with open(path, "rb") as handle:
+                before = handle.read()
+            with self.assertRaisesRegex(RuntimeError, "halfway"):
+                rp.write_submission(path, broken_labels())
+            with open(path, "rb") as handle:
+                self.assertEqual(handle.read(), before)      # byte for byte, not just "a file"
+            self.assertEqual(os.listdir(folder), ["out.csv"])
+
+    def test_repeating_the_write_gives_identical_bytes(self):
+        labels = ["X", "X", "H", "H", "A", "D", "A", "X"]
+        with tempfile.TemporaryDirectory() as folder:
+            first = os.path.join(folder, "first.csv")
+            second = os.path.join(folder, "second.csv")
+            rp.write_submission(first, labels)
+            rp.write_submission(second, labels)
+            rp.write_submission(first, labels)               # overwrite the same path
+            with open(first, "rb") as a, open(second, "rb") as b:
+                data_a, data_b = a.read(), b.read()
+            self.assertEqual(data_a, data_b)
+            self.assertEqual(hashlib.sha256(data_a).digest(), hashlib.sha256(data_b).digest())
+
+    def test_bytes_are_utf8_with_lf_line_endings_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "out.csv")
+            rp.write_submission(path, ["H", "A", "D", "X"])
+            with open(path, "rb") as handle:
+                data = handle.read()
+        self.assertEqual(data, b"frame,label\n0,H\n1,A\n2,D\n3,X\n")
+        self.assertNotIn(b"\r", data)                        # no CRLF even on Windows
+        self.assertFalse(data.startswith(b"\xef\xbb\xbf"))   # no byte-order mark
+        data.decode("utf-8")                                 # decodes without error
+
+    def test_write_uses_utf8_regardless_of_the_default_encoding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "out.csv")
+            real_open = open
+            seen = {}
+
+            def spy(file, mode="r", *args, **kwargs):
+                if str(file).endswith(".tmp"):
+                    seen["encoding"] = kwargs.get("encoding")
+                return real_open(file, mode, *args, **kwargs)
+
+            with mock.patch("builtins.open", side_effect=spy):
+                rp.write_submission(path, ["H"])
+        self.assertEqual(seen.get("encoding"), "utf-8")
+
+    def test_main_repeat_run_is_byte_identical(self):
+        evidence = new_evidence()
+        lead(evidence, 10, 29, "H")
+        lead(evidence, 40, 59, "A")
+        outputs = []
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch.object(rp, "source_frames", return_value=N), \
+                    mock.patch.object(rp, "collect_evidence", return_value=evidence), \
+                    mock.patch.object(rp, "half_video_blocks", return_value=BLOCKS):
+                for name in ("one.csv", "two.csv"):
+                    out = os.path.join(folder, name)
+                    self.assertEqual(rp.main(["--out", out]), 0)
+                    with open(out, "rb") as handle:
+                        outputs.append(handle.read())
+        self.assertEqual(outputs[0], outputs[1])
 
     def test_main_writes_one_row_per_frame(self):
         evidence = new_evidence()
