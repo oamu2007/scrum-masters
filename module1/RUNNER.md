@@ -3,24 +3,71 @@
 `run_possession.py` (repository root) turns the tactical tracking into one possession label per
 video frame and writes the submission CSV. One command, no ground-truth input.
 
-## Command
+## Exact commands (PowerShell, from the repository root)
 
-From the repository root:
+### 1. Environment (once)
+
+```powershell
+python --version                                   # must print: Python 3.12.10
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-release.txt  # exact versions, see "Environment" below
+python -m pip show numpy pandas                    # confirm the installed versions
+```
+
+`.venv/` must not be committed (it is listed in `.gitignore`; check before any `git add`).
+
+### 2. Run
 
 ```powershell
 python run_possession.py --data-dir C:\path\to\bundle --out data/release/<team_name>.csv
 ```
 
-- `--data-dir`: bundle root, the folder that contains `tactical/`. If omitted, `MTAH_DATA_DIR`
-  (set before Python starts) or the repository default is used.
-- `--out`: submission CSV to write. Replace `<team_name>` with the registered team name.
-- `--tau`: metres for the proximity score `exp(-distance / tau)`. Default `3.0`.
+- `--data-dir`: bundle root, the folder that contains `tactical/` (for a default checkout this is
+  `data`). If omitted, `MTAH_DATA_DIR` (set before Python starts) or the repository default is used.
+- `--out`: submission CSV. Replace `<team_name>` with the registered team name.
+- `--tau`: metres for the proximity score `exp(-distance / tau)`. Default `3.0`; the release run
+  uses the default.
 - `--game`: defaults to the match in `games.py`.
 
-Then validate the exact file:
+### 3. Validate the exact file
 
 ```powershell
 python evaluation/validate_submission.py "data/release/<team_name>.csv"
+Get-FileHash -Algorithm SHA256 "data/release/<team_name>.csv"
+```
+
+### 4. Tests
+
+```powershell
+python -m unittest discover -s tests -v            # 66 tests expected: 36 scoring/reader + 30 runner
+python module1/control_scores.py --test            # prints: self-test OK
+python -m starter.tactical_tracking --data-dir C:\path\to\bundle   # needs the real data; optional
+```
+
+All unit tests use invented data and need no match files, labels or network access.
+
+## Environment
+
+| Item | Version | Needed by |
+|---|---|---|
+| Python | 3.12.10 | everything |
+| NumPy | 2.5.4 | runner, M1, M3 |
+| pandas | 3.1.1 | scorer and validator, not the runner |
+| python-dateutil, tzdata | 4.0.0, 2026.6 | installed by pandas |
+
+These are the versions the runner and the full test suite were run with. They are pinned in
+`requirements-release.txt`. The organisers' `requirements.txt` is deliberately loose (the scorer
+supports Python 3.8 and 3.11 alike) and is left unchanged; it is enough to run the scorer, but it
+does not fix the versions of a release run. Python itself cannot be pinned from a requirements
+file, so use 3.12.10. No other Python package is required to produce or validate the submission.
+kloppy and the starter notebooks are optional and are not used by the runner.
+
+To record the exact environment of a release run:
+
+```powershell
+python --version
+python -m pip freeze
 ```
 
 ## Pipeline
@@ -31,10 +78,13 @@ python evaluation/validate_submission.py "data/release/<team_name>.csv"
    there.
 3. M1's evidence is kept as full-precision arrays (not rounded CSV): `score_home`, `score_away`,
    `d_home`, `d_away`, `ball_visible`, `home_available`, `away_available`.
-4. A decoder turns the arrays into labels, half by half, using `half_video_blocks` from
+4. The runner checks that observation `i` carries frame `i`, and validates the evidence before
+   decoding: lengths, boolean flags, finite scores in [0, 1], valid distances, and no availability
+   without a visible ball.
+5. A decoder turns the arrays into labels, half by half, using `half_video_blocks` from
    `games.py` (1st half 11185-90651, 2nd half 110808-190197, inclusive). State starts fresh in
    each half.
-5. Every frame is written: `H` / `A` / `D` inside the halves, `X` outside them.
+6. Every frame is written: `H` / `A` / `D` inside the halves, `X` outside them.
 
 Frame count, frame rate, paths and half blocks all come from `games.py`; nothing is hard-coded
 in the runner.
@@ -66,22 +116,14 @@ These are fixed constants chosen for plausibility. They were **not** tuned on th
 truth, which is too short (17 possessions) to select parameters. Do not change them by looking
 at public-label scores.
 
-## Environment
-
-Tested with Python 3.12.10 and NumPy 2.5.4 (installed from `requirements.txt`). The runner
-itself needs only NumPy. Install with:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
 ## Output and overwrite rules
 
-- Header `frame,label`, then one row per frame, frames `0..199318` in order, 199,319 data rows,
-  LF line endings.
+- Header `frame,label`, then one row per frame, frames `0..199318` in order, 199,319 data rows.
+- Encoding UTF-8 (no byte-order mark), LF line endings only, on every platform.
 - The file is first written to `<out>.tmp` and renamed to `<out>` only after the whole run
-  succeeds. A failed run never leaves a partial submission. An existing `<out>` is replaced only
-  by a successful run.
+  succeeds. A failed run never leaves a partial submission, and an existing `<out>` is replaced
+  only by a successful run.
+- Repeating the run with the same inputs, code and environment gives identical bytes.
 - On any error the runner prints `ERROR: ...` to stderr and exits with status 1.
 
 ## Result of the fallback run (format check only)
@@ -92,12 +134,20 @@ halves). The official validator accepts the file and reports 710 possessions of 
 That count is high for a real match, which is expected without stoppage evidence and without
 M2's possession memory. The validator checks format only; it says nothing about label quality.
 
-## Tests
+## Reproduction record (fill in for each release candidate)
 
-```powershell
-python -m unittest discover -s tests -v
-python module1/control_scores.py --test
-```
+| Field | Value |
+|---|---|
+| Candidate commit (`git rev-parse HEAD`) | |
+| Python (`python --version`) | |
+| NumPy / pandas (`python -m pip show numpy pandas`) | |
+| Command | |
+| Validator result | |
+| SHA-256 of the CSV | |
+| Person and machine | |
+
+A release is reproduced only when a second person, on another machine, fills in the same table
+from a clean checkout of the same commit and gets the same SHA-256.
 
 ## Rules
 
