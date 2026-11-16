@@ -41,6 +41,56 @@ CONFIRM_FRAMES = 12   # about 0.5 s of consecutive credible opposing control bef
 
 PRODUCERS = []  # extra per-frame evidence producers (M4 goes here); each takes an observation
 
+FLOAT_FIELDS = ("d_home", "d_away", "score_home", "score_away")
+BOOL_FIELDS = ("ball_visible", "home_available", "away_available")
+
+
+def validate_evidence(evidence, n_frames):
+    """Fail loudly if the evidence is not what the decoder assumes. Run before decoding.
+
+    Checks: all seven arrays exist with length n_frames; flags are boolean dtype; scores are
+    finite and inside [0, 1]; distances are NaN or finite and >= 0; availability never occurs
+    without a visible ball; an unavailable side has score 0 and no distance.
+    """
+    expected = set(FLOAT_FIELDS) | set(BOOL_FIELDS)
+    missing = expected - set(evidence)
+    if missing:
+        raise ValueError("evidence is missing fields: {}".format(sorted(missing)))
+
+    for name in sorted(expected):
+        array = np.asarray(evidence[name])
+        if array.shape != (n_frames,):
+            raise ValueError("evidence[{!r}] has shape {}, expected ({},)".format(
+                name, array.shape, n_frames))
+
+    for name in BOOL_FIELDS:
+        if np.asarray(evidence[name]).dtype != np.bool_:
+            raise ValueError("evidence[{!r}] must be boolean, got {}".format(
+                name, np.asarray(evidence[name]).dtype))
+
+    for name in ("score_home", "score_away"):
+        score = np.asarray(evidence[name], dtype=float)
+        if not np.isfinite(score).all():
+            raise ValueError("evidence[{!r}] has non-finite scores".format(name))
+        if score.min() < 0.0 or score.max() > 1.0:
+            raise ValueError("evidence[{!r}] has scores outside [0, 1]: min {}, max {}".format(
+                name, score.min(), score.max()))
+
+    for name in ("d_home", "d_away"):
+        distance = np.asarray(evidence[name], dtype=float)
+        seen = ~np.isnan(distance)
+        if not np.isfinite(distance[seen]).all() or (distance[seen] < 0).any():
+            raise ValueError("evidence[{!r}] has negative or infinite distances".format(name))
+
+    visible = np.asarray(evidence["ball_visible"])
+    for side in ("home", "away"):
+        available = np.asarray(evidence[side + "_available"])
+        if (available & ~visible).any():
+            raise ValueError("{}_available is true on frames without a visible ball".format(side))
+        if (np.asarray(evidence["score_" + side])[~available] != 0.0).any():
+            raise ValueError("score_{} is nonzero where {} evidence is unavailable".format(
+                side, side))
+
 
 def collect_evidence(tau, game, data_dir):
     """One pass over the tracking. Returns M1's seven full-precision arrays."""
@@ -61,6 +111,12 @@ def collect_evidence(tau, game, data_dir):
         for index, observation in enumerate(source):
             if index >= n_frames:
                 raise RuntimeError("tracking has more frames than the video ({})".format(n_frames))
+            frame = observation.get("frame") if hasattr(observation, "get") else None
+            if frame is None:
+                raise RuntimeError("observation {} has no 'frame' field".format(index))
+            if frame != index:
+                raise RuntimeError("tracking out of order: observation {} carries frame {}".format(
+                    index, frame))
             evidence = score_frame(observation, tau=tau)
             for name, array in fields.items():
                 array[index] = evidence[name]
@@ -118,6 +174,7 @@ def decode_half(evidence, first, last):
 
 def decode_match(evidence, n_frames, game):
     """One legal label for every frame. X outside the graded halves."""
+    validate_evidence(evidence, n_frames)  # before any decoder (fallback or M2) touches it
     labels = ["X"] * n_frames
     for _half, first, last in half_video_blocks(game):
         labels[first:last + 1] = decode_half(evidence, first, last)
