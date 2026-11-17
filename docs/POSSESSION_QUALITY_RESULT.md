@@ -14,8 +14,10 @@ Work began 2026-11-17 **16:52:27 UTC / 08:52:27 America/Tijuana**. The requested
 The strongest hypothesis and bounded approach were reported earlier while work
 continued. The previous audit's lack of a contract defect was not treated as
 evidence of predictive adequacy. No history-reset or backdating experiment was
-repeated. Final timing and generated-artifact identities will be recorded below
-after source freeze and generation.
+repeated. The completion decision was brought forward to **17:12:40 UTC / 09:12:40
+America/Tijuana**, about **20 minutes** after starting, once both validated runs
+matched. Final preservation and documentation followed. Work completed before the
+30-minute checkpoint, so no claim of having run for 30 or 90 minutes is made.
 
 ## Workspace, source and preservation
 
@@ -27,7 +29,7 @@ after source freeze and generation.
 | New branch | `debug/possession-quality-20261117` |
 | Verified integration HEAD / new branch base | `f8edf252ebf17361d66bc847ca7b35a988b2e2f5` |
 | Frozen prior inference | `48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78` |
-| Resulting inference commit | Pending local source freeze; recorded in final execution section |
+| Resulting source/test/contract commit | `5ed8c7ccc249c774e150addd5fc25cd8041fc309` |
 | Preservation tag object | `73d81ec5f21d83f93cf8a0d37f8990cc17b1f2f0` |
 | Preservation tag target | `48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78` |
 | Protected CSV, relative to integration checkout | `data/release/runs/20261117T105211791158Z/candidate.csv` |
@@ -222,10 +224,105 @@ publication, message to teammates or submission occurred.
 
 ## Final execution record
 
-Pending clean source freeze, separate generation, official format validation,
-fresh-process repeat, final preservation check and result-record commit.
+**Frozen generation source: `5ed8c7ccc249c774e150addd5fc25cd8041fc309`**, clean on
+`debug/possession-quality-20261117` for both runs. The subsequent result-record
+commit changes only this document; it does not change inference or candidate bytes.
 
-Smallest next action after successful execution: focused review of this proposed
-set-piece dwell rule and its false-tag/live-hold tradeoff. Candidate adoption and
-independent teammate reproduction remain separate; perfect predictions are not a
-prerequisite for reviewing this bounded improvement.
+| Check | Result |
+|---|---|
+| New quality suite | 22 pass, including two explicitly named semantic-limit characterizations |
+| Carried-forward focused audit | 10 pass; superseded expectation reviewed above |
+| Final pre-freeze maintained suite | 339 pass, no skips, 20.480 s |
+| First generation's maintained suite | 339 pass, no skips, 25.259 s |
+| Repeat generation's maintained suite | 339 pass, no skips, 20.291 s |
+| M1 / standalone M2 / standalone M4 | Pass / 13 pass / pass |
+| Both actual integrated generations | Exit 0 |
+| Both official format validations | Exit 0; 199,319 ordered rows, frames 0..199318 |
+| Separate fresh-process hashes | Identical |
+| Source, configuration, input and environment manifests | Identical across runs |
+| Preserved integration files | All 108 byte-identical, including all 24 prior run files |
+| Integration HEAD, status and preservation tag | Unchanged |
+| Whitespace check | Pass |
+
+The **new review candidate** is:
+
+`C:/Users/oamu2/more-than-a-hack-2027/data/possession-quality-20261117/data/release/runs/20261117T170938345818Z/candidate.csv`
+
+Fresh repeat:
+
+`C:/Users/oamu2/more-than-a-hack-2027/data/possession-quality-20261117/data/release/runs/20261117T171127788505Z/candidate.csv`
+
+Both SHA-256:
+
+```text
+6D4E42C45559C71F77DF4F4198F14F51D7D8D901D5EC2620E01487AFF3327B74
+```
+
+Both directories contain their own `evidence.json`, `pipeline.json`, `tests.log`,
+`generation.log` and `official_validator.log`. Manifests bind the exact source,
+commands, configuration, environment, input hashes, CSV hash and report hash.
+`data/quality/verification.json` records the final cross-run and preservation
+assertions. The original candidate still has exactly the protected hash above.
+The old debug checkout remains clean at `20994301ca6d80849c668270f9bc168cbe129035`;
+the original repository retains its pre-existing `.gitignore` modification.
+
+### Configuration and permitted input provenance
+
+Actual integrated mode, game BAR-ATH, tau 3.0, native half triples and unchanged
+M2 defaults were used. M4 uses the shipped configuration plus the three new defaults
+documented above. Full values are in each manifest and pipeline report.
+Existing pinned Python **3.12.10**, NumPy **2.5.4**, pandas **3.1.1**,
+python-dateutil **4.0.0**, tzdata **2026.6** on Windows 11 were reused, with
+`OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1`. No package was installed.
+
+Licensed inputs were referenced explicitly from
+`C:/Users/oamu2/more-than-a-hack-2027/data/tactical/`, not copied:
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `BAR-ATH_tactical_atd.xml` | 59,057 | `327E35E32E46A647389B88F883D4F9A2AB931E3E6148AEF2FCF8F22B1E93C43A` |
+| `BAR-ATH_tactical_atd.txt` | 195,714,285 | `F130E350D2BFDF734B7E32F072931FCCC6D015C1E837D082064875FE0A700431` |
+| `BAR-ATH_tactical_smart_tagging.xml` | 261,055 | `0594D35E3DF01B9C5002372D8615E2E8EF5379AC8F4E84C5EF7A53F4304C9019` |
+
+Exact parent command pattern, from the new worktree:
+
+```powershell
+$qualityPython = 'C:/Users/oamu2/more-than-a-hack-2027/data/integration-attempt/data/release-env/Scripts/python.exe'
+$env:OPENBLAS_NUM_THREADS = '1'
+$env:OMP_NUM_THREADS = '1'
+& $qualityPython -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data --gates data/quality/review-gates.json
+& $qualityPython -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data --gates data/quality/review-gates.json --expect-sha256 6D4E42C45559C71F77DF4F4198F14F51D7D8D901D5EC2620E01487AFF3327B74
+```
+
+`review-gates.json` is an ignored local copy of the gate schema with **every gate
+blocked for this new proposal**; no historical approvals/reproduction records were
+transferred. Both parent orchestration commands return **2** for unapproved review
+output, while their required tests/generation/validator children each return 0.
+This is deliberately separate from candidate adoption. The protected tracked
+`release_gates.json` is unchanged. A clean independent checkout can reproduce the
+CSV directly with `run_possession.py --mode integrated --data-dir <original bundle>
+--out <new ignored file> --report <new ignored report>`, then use the official
+validator; local review-gate bookkeeping is not an inference input.
+
+### What the new output does and does not establish
+
+Diagnostic totals are H 78,992 / A 72,741 / D 6,614 / X 40,972. M4 emitted 1,931
+strong dead and 838 strong restart reports. The validator reports 729 possessions
+using its X-as-gap convention. These totals are recorded **after** freezing the
+rule, not used as success criteria or to revise it. Inserting D can split an H/A
+spell even if the same team restarts; more or fewer spells is not itself accuracy.
+No candidate was evaluated against public truth, and no alternate parameter set
+or version was selected by metrics. Format validity and same-machine repeatability
+are not independent reproduction or football-quality proof.
+
+**Demonstrated:** previously impossible tagged interior pauses now enter persistent
+D under the explicit conjunction, local jitter no longer automatically vetoes that
+evidence, existing safeguards and file contracts pass, and a new candidate is
+reproducible. **Unverified expectation:** this improves actual match stoppage and
+possession quality enough to offset false-tag/live-hold errors. It does not solve
+all missed D, possession fragmentation, retrieval or startup uncertainty.
+
+**Smallest next action:** review the proposed M4 dwell rule, its tests and the
+false-tag/live-hold tradeoff. If accepted, independently reproduce this exact source
+and hash before adoption. No merge, push, publication or submission is requested
+or performed. Work stops with a concrete review candidate, within the budget.
