@@ -2,9 +2,15 @@
 
 ## Identity and access
 
-This is an **independent teammate run on another machine**, still pending. Two
-agent runs on the original Windows machine matched; that is repeat generation,
-not independent reproduction. A matching hash proves bytes, not possession accuracy.
+**Independent teammate reproduction is complete, as confirmed by the team owner.**
+The final technical document records Armando Sánchez regenerating the selected
+CSV on a second Windows AMD64 machine on 2026-11-17, from a clean clone at
+`00b8ed3`, with the SHA-256 below, 342 passing tests without skips and official
+validation passing. The owner physically checked that run. Its logs remain in
+Armando's ignored `data/` files and were unavailable to the final-check reviewer;
+this status records the team's confirmation rather than a review of those logs.
+The original two same-machine agent runs establish repeat generation separately.
+A matching hash proves bytes, not possession accuracy.
 
 | Item | Verified identity |
 |---|---|
@@ -15,7 +21,7 @@ not independent reproduction. A matching hash proves bytes, not possession accur
 | Original run directory, relative to original repository | `data/possession-quality-20261117/data/release/runs/20261117T170938345818Z/` |
 | Same-machine repeat directory, same prefix | `data/possession-quality-20261117/data/release/runs/20261117T171127788505Z/` |
 
-Both directories contain `candidate.csv`, `evidence.json`, `pipeline.json` and
+Both directories contain `scrum-masters.csv` (originally `candidate.csv`), `evidence.json`, `pipeline.json` and
 test/generation/validator logs. Their actual manifests identify source `5ed8c7c`,
 the command/configuration below, matching inputs and matching CSV hashes.
 `2a3a89d7308bf967dd7c0354f69263a9e1e31fea` only records results;
@@ -23,10 +29,10 @@ the command/configuration below, matching inputs and matching CSV hashes.
 this candidate or changed production inference. The documentation commit containing
 this guide is a later descendant; record its identity with `git rev-parse HEAD`.
 
-**Access prerequisite:** this local merge and these handoffs have not been pushed
-or published. Obtain an authorized source bundle with Git history, or have the
-owner publish the required commits before cloning/fetching them. Remote availability
-was not verified here; do not assume an unpublished commit is fetchable.
+**Public source:** [scrum-masters](https://github.com/oamu2007/scrum-masters)
+and this guide were accessible without authentication during the 2026-11-17 final
+submission check. Published `main` was `4f1abae849a1d72df532d25512175a9703f0fa11`,
+which contains the merge and handoffs. Clone the public repository with Git history.
 Use a dedicated clean checkout of `00b8ed3` (or this documentation descendant).
 For historical-source reproduction, a separate checkout of `5ed8c7c` is equivalent
 for generation, but its maintained suite has 339 rather than 342 tests.

@@ -141,11 +141,16 @@ with identical hashes/configuration/input manifests. Reviewed follow-up and loca
 merged verification pass **342 tests, no skips** (merged run 24.021 s). The merged
 validator also accepts the preserved selected CSV: 199,319 ordered rows. Inference
 matches `5ed8c7c`; no full-match generation was repeated for these handoffs.
-**Independent teammate reproduction is pending; full-match accuracy is unverified.**
+**Independent teammate reproduction is complete, as confirmed by the team owner;
+full-match accuracy is unverified.** The final technical document records Armando
+Sánchez's second-machine Windows run on 2026-11-17 from clean source `00b8ed3`,
+with the selected CSV hash, 342 passing tests without skips and official validation
+passing. The owner physically checked the run; its logs remain in Armando's ignored
+`data/` files and were unavailable to the final-check reviewer. See the reproduction
+guide for this evidence boundary and the now-public source URL.
 Local merge is not release approval. Existing release gates and historical candidate
-records remain unchanged. Owner publication/source delivery, independent reproduction,
-team data-use confirmation and final adoption/submission decisions remain teammate
-actions; nothing was pushed, published or submitted here.
+records remain unchanged. Publication was verified during the final check; adoption
+and submission remain separate team decisions. No submission was performed here.
 
 ## Reference map
 
@@ -156,7 +161,7 @@ actions; nothing was pushed, published or submitted here.
 | Actual pipeline | [run_possession.py](../run_possession.py), `collect_evidence`, `decode_match`, `write_submission` | Actual modules, transport, defaults, serialization |
 | M1/M2 | [CONTROL_SCORES](../module1/CONTROL_SCORES.md), “Callables and fields”; [M2](../modulos/M2.md), “Defaults” / “Preserved transition policies” | Proximity and state-machine semantics; old execution statuses are historical |
 | M4/current change | [evidence.py](../module4/evidence.py), `EvidenceConfig`, `_tagged_pause`, `__call__`; [quality result](POSSESSION_QUALITY_RESULT.md), “Change” / “Bounded restart-characterization follow-up” | Exact rule, rationale, known failures and current verification |
-| Candidate/reproduction | [quality result](POSSESSION_QUALITY_RESULT.md), “Final execution record”; [reproduction guide](CANDIDATE_REPRODUCTION.md) | Generation provenance, environment, configuration, hash and pending independence |
+| Candidate/reproduction | [quality result](POSSESSION_QUALITY_RESULT.md), “Final execution record”; [reproduction guide](CANDIDATE_REPRODUCTION.md) | Generation provenance, environment, configuration, hash and team-confirmed independent reproduction |
 | Earlier diagnosis | [PUBLIC_DIAGNOSTIC](PUBLIC_DIAGNOSTIC.md), “Identity and provenance” / “Limits”; [INTEGRATION_STATUS](INTEGRATION_STATUS.md), startup diagnosis | Older candidate only; pipeline check and unresolved startup ambiguity, not new accuracy |
 | Format | [validate_submission.py](../evaluation/validate_submission.py); [SUBMISSION](../SUBMISSION.md) | Official file contract, not accuracy certification |
 
