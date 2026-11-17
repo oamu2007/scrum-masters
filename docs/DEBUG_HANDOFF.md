@@ -1,5 +1,75 @@
 # Kickoff debugging checkpoint — 2026-11-17
 
+## Latest focused diagnosis (supersedes the old checkpoint's open questions)
+
+**No supported general prediction correction found. Stop with diagnosis; release
+remains blocked.** Starting checkout was clean `integration-attempt` at
+`4c9a23998b625ad3e9913d7e54fb52e456a30202`. This is newer than the old checkpoint's
+`def5fc8` result record. Inference remains exactly
+`48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78`; only the two documents and gates differed
+at entry. The current follow-up changes two records and adds nine invented tests;
+it supplies no new inference source or candidate. See the latest section of
+`INTEGRATION_STATUS.md` for full evidence and policy options.
+
+Resolved diagnostic questions:
+
+- Both initial D exits use **ball-only path B**, with no path A contribution in
+  either three-report confirmation burst. M4 is accepting pre-kickoff ball motion
+  under approximate context, not observing referee authorization.
+- First-half offsets: first ball 2, motion baseline 4, ball-only candidate 5,
+  first report 10, confirmation/D exit 12, first owned label 23. The D prefix is
+  missingness + history/displacement/sustain + restart confirmation. It is not
+  M2's 12-sample ownership delay; that produces the following 11 X frames.
+- Second-half offsets: eligibility origin 2,852, ball-only candidate 2,857,
+  report 2,862, confirmation/D exit 2,864, first owned label 2,879. Confirmation
+  precedes the published kickoff by 70 frames. This scan reproduced every label
+  in the existing candidate through actual M3/M1/M4/runner/M2.
+- A single history-reset diagnostic changed only two second-half zero-score
+  availability frames; report and confirmation times were unchanged in both
+  halves. Pre-tag history is not the cause of these errors.
+- Observation, motion-candidate, first-report and confirmation times are distinct.
+  There is no validated event-time estimate. Backdating expands the invented
+  pre-restart retrieval false-live interval and cannot recover an unseen onset.
+
+What remains uncertain: the physical meaning of early automatic ball motion.
+Handling/retrieval and genuine play can meet the same observed feature gates;
+the trace does not prove which physical action occurred. A unique approximate
+kickoff phase does not prove the initial state is dead. Initial acquisition has
+less evidence than a restart after a supported stoppage, although both currently
+share the same D/restart policy. Do not disable accepted ball-only ordinary
+recovery or treat phase boundaries as truth to hide this ambiguity.
+
+Today's smallest defensible action is to preserve the failed investigation
+candidate. Future choices are an explicitly uncertain startup/abstention policy
+(with separate acquisition criteria; proximity alone reopens the original bug),
+or additional independently informative automatic evidence validated on permitted
+other games. Neither is represented as a correction achieved today.
+
+Verification: **306 maintained tests pass, no skips**; affected startup/kickoff/
+integrated/stoppage suites and M1/M2/M4 standalone checks pass. Nine new invented
+tests cover requested timing/negative/reset cases. Two named
+`KnownStartupLimitations` tests intentionally characterize failure, not correctness.
+All old expectations remain. Whitespace check passes. All **24 files in all four
+previous run directories** remain hash-identical. Official validator on the
+preserved candidate exits 0; FAQ diagnostic still exits 2.
+
+Candidate remains `data/release/runs/20261117T105211791158Z/candidate.csv`, SHA-256
+`E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01`.
+FAQ counts remain D 2,864 / A 54 / H 1 / X 15; first-half prefix remains D 12.
+No replacement generation or new repeatability claim. New output would require
+new independent reproduction; teammate reproduction/packaging/approval remain
+separate and blocked. No push, main merge, submission or release approval.
+
+New aggregate-only evidence and logs: `data/startup-diagnosis-20261117/`.
+Run the local diagnostic with `data/release-env/Scripts/python.exe -B
+data/startup-diagnosis-20261117/probe.py` from this checkout, with
+`OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1`. It asserts full candidate label
+equality and preservation; it does not write a candidate or print raw tracking.
+Use ordinary unittest discovery for the committed tests. No process is left
+running after this follow-up. Do not resume arbitrary tuning experiments.
+
+## Preserved historical checkpoint (written before commit 4c9a239)
+
 **Stopped at user request. Partial correction only; release remains blocked.**
 This checkpoint records existing evidence, not another algorithm experiment.
 Paths below are relative to `C:/Users/oamu2/more-than-a-hack-2027/data/integration-attempt`.

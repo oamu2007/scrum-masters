@@ -1,5 +1,175 @@
 # Integration status — November 17, 2026
 
+## Focused startup diagnosis — latest local follow-up
+
+**No defensible prediction correction established; inference and candidates are
+unchanged. Release remains blocked.** The trace resolves the timing questions,
+but does not establish an observation that separates preparatory movement from
+authorized play. Nine invented actual-pipeline tests were added; two deliberately
+record known semantic failures. Their passing status is not a correctness claim.
+The historical execution records below remain intact.
+
+### Verified starting state and scope
+
+Command access was proved in this checkout before investigation. Branch was
+`integration-attempt`, clean HEAD **`4c9a23998b625ad3e9913d7e54fb52e456a30202`**.
+`def5fc8a43a9f4fa88891ab5e1b37b8e9f532f09` is the preceding result record;
+`48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78` remains the inference source.
+The difference from that source comprises only the two status/checkpoint documents
+and `release_gates.json`. No pending Git operation or index lock was found.
+No applicable AGENTS.md was found in checked ancestors or affected directories.
+Read FAQ, RULES, CHALLENGE possession definitions, DATA time-base semantics,
+the handoff/status, M2/M4 contracts, and the relevant November 17 component reviews
+in the original checkout. No remote operation or external evidence was used.
+
+Only tests and these two records change in this follow-up. No new inference source
+SHA or candidate is claimed; the local diagnosis-record commit is separate from
+the frozen inference source above. Scoring, units, missingness, half boundaries,
+thresholds, confirmation policy and the accepted ordinary M4 envelope remain intact.
+
+### Verified mechanism and time separation
+
+Actual automatic tag loading retains `Kick Off (Start)` and maps unknown team to
+None. Each half has one nonempty 125-frame phase. The first overlaps graded start;
+the second begins later. Seconds are rounded to tactical frames with no offset;
+the extractor does not call its published-anchor diagnostic during inference.
+The phase is approximate, not an event timestamp. Its type supplies M4 eligibility
+and the runner's half-start initial-D prior, not independent restart authorization.
+
+A fresh actual M3 -> M1/M4 -> runner -> M2 scan reproduced **every label** in the
+existing investigation CSV. Read-only function-return instrumentation inspected
+the actual M4 branches, rather than substituting a reimplementation. The compact
+milestones below are offsets from each native graded-half start, not new labels:
+
+| Observed/computed milestone | First half offset | Second half offset |
+|---|---:|---:|
+| First usable ball observation | 2 | 0 |
+| First short motion baseline | 4 | 2 (before phase eligibility) |
+| Kickoff eligibility origin observed | 2 | 2,852 |
+| Ball-only sustained-motion candidate begins | 5 | 2,857 |
+| First positive restart report | 10 | 2,862 |
+| Third consecutive report / actual M2 D exit | 12 | 2,864 |
+| First H/A label after unknown-side resumption | 23 | 2,879 |
+
+**Both initial confirmation bursts use path B exclusively: three B reports and
+zero A reports.** Collective activity never meets path A's gate before the first
+report. The second-half confirmation is 70 frames (2.8 s) before the documented
+kickoff. Sufficient displacement, fresh net motion and sustained ball-only
+progress all occur within the approximate phase before that diagnostic boundary.
+This is an actual heuristic false start, not a transport/indexing failure.
+
+The first half's 12-frame D prefix decomposes as: two initially missing samples;
+two frames to build the minimum observed motion span; one further frame to meet
+the ball-only displacement gate; five frames (0.20 s) of candidate sustain; two
+more frames (0.08 s) to confirm three reports. Initial D makes all those earlier
+frames D. The separate 12-sample ownership rule accounts for the following
+11 X frames; it does not cause the D prefix. These are observed/computed latencies,
+not estimates of the true kickoff instant.
+
+M4's `report_since` is the first qualifying report time, used for consumption;
+`move_since` is a motion-candidate time; neither is a validated event estimate.
+M2 labels only its confirmation frame. **No event-estimate field or retrospective
+labeling is implemented.** Missing observations cannot locate an unseen onset.
+
+One controlled diagnostic ablation cleared short history at phase activation,
+with unchanged observations/configuration. First-half evidence was identical.
+Second-half zero-score availability changed on two frames, but path B onset and
+both report/confirmation times were identical. At the first positive report the
+retained history was entirely post-phase in both halves. Retained pre-tag history
+therefore does **not** explain either observed label error. The ablation produced
+no alternate labels or candidate and is not an adopted code change.
+
+### Uncertainty, rejected correction, and explicit policy options
+
+The current features cannot reliably establish whether that early second-half
+movement is handling, retrieval, an automatic tracking error, or another precursor.
+No video was hand-labeled, and no such interpretation is asserted as fact. What is
+verified is that the accepted ball-only rule treats it as resumption. A maintained
+invented 3 m/s in-pitch retrieval case now demonstrates the same failure through
+the actual integrated pipeline, including a subsequent stationary interval before
+an invented later kickoff. Ordinary M4 already documents this observational overlap.
+
+Initial acquisition and resumption after a supported stop differ epistemically:
+the former has only an approximate phase prior and no observed prior live/dead
+transition; the latter has supported same-half stop eligibility. The current
+pipeline collapses both into persistent D plus the same restart heuristic. A unique
+overlapping phase does not prove a graded start is dead, and a future phase does
+not precisely locate the restart. Both initial errors follow from that assumption
+plus the ball-only rule, rather than a newly demonstrated M2 implementation defect.
+
+Retrospectively moving the transition to the first report removes only the two
+confirmation-delay frames and moves the false early start earlier. Moving it to
+motion onset also expands the invented retrieval false-live interval. At an
+already-live graded start, initial missingness and lack of an earlier observed
+stationary baseline leave onset unidentified. Disabling path B or requiring active
+players would remove accepted stationary/sparse/absent-player recovery coverage.
+No such tradeoff, tag-endpoint rule, threshold search, frame mask or CSV rewrite
+was adopted.
+
+Smallest defensible decision today: **retain this as a failed investigation
+candidate, preserve the accepted ordinary envelope, and keep release blocked.**
+The explicit next policy options are:
+
+1. Keep the current initial-D/motion heuristic as an acknowledged approximation;
+   accept that these semantic blockers remain unresolved. This is today's action,
+   not release acceptance.
+2. Adopt a distinct uncertain-start state with X output until supported state
+   acquisition, leaving confirmed ordinary D persistent. This avoids claiming D
+   solely from overlapping context, but sacrifices some dead-ball predictions and
+   cannot itself identify authorization. Specify acquisition/abstention behavior
+   and validate invented and permitted other-game false-start cases before adoption;
+   merely initializing X and reusing proximity acquisition reopens the original bug.
+3. Add independently informative automatic restart/authorization evidence and
+   validate it on permitted other games before choosing a general event-estimation
+   or retrospective rule. This is further modeling work, not a justified small fix
+   from the evidence examined today.
+
+### Checks, preservation, and candidate identity
+
+New `tests/test_startup_diagnosis.py`: nine tests cover pre-kickoff half start,
+live graded start, phase overlap/expiry, missing initial samples, motion and
+confirmation timing, interrupted confirmation/no backfill, slow/outside handling
+and jitter negatives, ordinary delayed restart/persistent D, and fresh half state.
+`KnownStartupLimitations` contains **two failure-characterization tests**, not
+successful false-start controls. The seven safeguard tests pass as such.
+
+Affected suites: new startup 9, existing kickoff 14, integrated pipeline 12, and
+stoppage suites 66, all pass. Complete maintained suite: **306 pass, no skips**
+(297 retained plus 9 new). Existing delayed-recovery, live-drift and jitter
+expectations remain unchanged. M1 self-test, 13 standalone M2 tests and M4 tag
+assertions pass. `git diff --check` passes. Project-local Python 3.12.10 and pinned
+environment were reused; no installation or dependency changes.
+
+All **24 files across four historical run directories** match the before/after
+SHA-256 inventory. Existing investigation candidate, relative to this checkout:
+
+`data/release/runs/20261117T105211791158Z/candidate.csv`
+
+SHA-256: **`E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01`**.
+Official validation of this exact preserved file exits 0 (199,319 ordered rows).
+FAQ diagnostic exits 2: **D 2,864 / A 54 / H 1 / X 15**, unchanged.
+First-half first 125 frames remain **D 12 / X 11 / A 50 / H 52**.
+No new candidate, source-change generation, or repeat-generation claim is made.
+The full-stream label comparison is same-machine diagnosis, not independent
+reproduction. Any future changed output needs its own clean source, fresh run,
+official validation, repeat hash and new independent teammate reproduction.
+
+Local ignored evidence is under `data/startup-diagnosis-20261117/`: `probe.py`,
+`aggregate-diagnosis.json`, `prior-artifact-hashes.json`, `probe.log`, focused/full
+test logs, `validator.log`, and `kickoff-check.json`. The probe stores only
+aggregate diagnostics, no tracking extracts or full evidence arrays. It can be
+rerun with the project-local interpreter and `-B`; it reads inputs from the parent
+data bundle and asserts existing-candidate equality and artifact preservation.
+One initial probe invocation failed before scanning because the required game
+argument was omitted; corrected before the successful scan, with no inference edit.
+
+Still blocked: kickoff semantics, independent teammate reproduction, packaging and
+submission approval. Release-gate approvals are unchanged. No push, merge into main,
+submission or release approval occurred. Stop here; do not continue parameter
+experiments against the published interval.
+
+## Historical integration and candidate records
+
 **Current verdict: kickoff failure only partially corrected; release blocked.**
 The general initial-D prior removes most pre-kickoff possession, but the new
 review candidate still has 70 non-D frames in the published pre-second-kickoff
