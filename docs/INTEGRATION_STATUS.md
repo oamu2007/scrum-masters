@@ -1,6 +1,10 @@
 # Integration status — November 17, 2026
 
-**Current work: kickoff-state follow-up.** The original freeze/result below is
+**Current verdict: kickoff failure only partially corrected; release blocked.**
+The general initial-D prior removes most pre-kickoff possession, but the new
+review candidate still has 70 non-D frames in the published pre-second-kickoff
+interval and introduces a 12-frame D prefix at the first-half kickoff. See the
+final follow-up results below. The original freeze/result below is
 preserved as historical execution evidence, including its limited 283-test gate.
 It does not cover the subsequently demonstrated FAQ kickoff discrepancy. See
 the appended kickoff follow-up for the new rule, candidate and remaining limits.
@@ -344,3 +348,107 @@ the verified local pinned environment and OPENBLAS_NUM_THREADS/OMP_NUM_THREADS=1
 The new source will be committed before generation; old output paths are never
 reused. Exact source SHA, run paths, hashes and observed diagnostics are recorded
 in the result section below after the two fresh runs.
+
+### Frozen follow-up result — partial correction, not an accepted release
+
+**New source:** `48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78`.
+This commit contains the scoped M4/M2/runner change, 14 added tests, contracts and
+the separate FAQ diagnostic. Both new full runs used this clean source and the
+same pinned Python 3.12.10 environment, complete configuration and licensed input
+identities recorded above. No parameters changed after the new match diagnostic.
+
+| Run | Ignored directory relative to integration root | Results |
+|---|---|---|
+| Review candidate | `data/release/runs/20261117T105211791158Z/` | 297 tests pass; generation 0; official validator 0; FAQ diagnostic 2 |
+| Fresh repeat | `data/release/runs/20261117T105410694264Z/` | 297 tests pass; generation 0; official validator 0; hash match; FAQ diagnostic 2 |
+
+Both have **199,319 ordered rows**, 1,682,773 bytes and SHA-256:
+
+```text
+E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01
+```
+
+**Exact candidate to review/reproduce for investigation:**
+`C:/Users/oamu2/more-than-a-hack-2027/data/integration-attempt/data/release/runs/20261117T105211791158Z/candidate.csv`.
+It is a review candidate, **not an approved replacement or submission recommendation**.
+The earlier `90d1f4e`/`3dec179` source/history and both prior run directories remain
+intact; all twelve files in those directories still match their recorded hashes.
+
+| FAQ 110808..113741 diagnostic | Prior candidate | New review candidate |
+|---|---:|---:|
+| D | 0 | 2,864 |
+| H | 2,235 | 1 |
+| A | 688 | 54 |
+| X | 11 | 15 |
+| Non-D discrepancy | 2,934 | **70** |
+
+The new rule **does not fully satisfy the published semantics**. A focused fresh
+M3 -> M1/M4 -> M2 evidence scan reproduced every new candidate label exactly.
+Both halves receive the automatic initial-D prior. During the published pre-second-
+kickoff interval, M4 has 35 restart-available frames and **25 strong restart
+samples**, despite all those frames being dead by the FAQ. The initial D prefix
+lasts 2,864 frames; the ordinary M2 restart confirmation then releases D early.
+This is an inference-policy/observational ambiguity, **not dropped evidence,
+indexing shift, serialization or a fallback substitution**. The approximate tag
+and fresh movement support the implemented heuristic, but not the intended
+referee-authorized live state. No threshold/search/mask was used to erase this
+remaining discrepancy.
+
+**First-half startup regression:** the new candidate begins that graded half with
+**12 D frames**, where the FAQ says grading begins at kickoff. Its first 125 frames
+are D 12, X 11, A 50, H 52 (prior: D 0, X 13, A 60, H 52). The producer emits 25
+strong restart samples in this diagnostic span and the half does resume; it does
+not remain dead indefinitely. Nevertheless, the new D prefix is an unresolved
+startup/confirmation-latency regression and must not be represented as correct
+football labeling. The five seconds after the published second kickoff are H 125
+in both candidates; no additional truth claim is made about later play.
+
+Full new-file aggregate: **H 80,968; A 74,250; D 3,517; X 40,584**. All 40,462
+outside-half frames remain X; 122 X frames are inside. M4 dead available/positive/
+strong stays **88,292 / 1,488 / 368**; restart becomes **857 / 179 / 179**, including
+the additional kickoff reports. The official validator reports 709 possessions,
+mean 8.8 s under its X-gap convention. These are diagnostics, not ranking or
+accuracy measurements. No public-window scoring occurred.
+
+Exact executed commands (integration root, project-local `$python` and thread
+settings as above):
+
+```powershell
+& $python -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data
+& $python -B kickoff_check.py data/release/runs/20261117T105211791158Z/candidate.csv
+& $python -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data --expect-sha256 E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01
+& $python -B kickoff_check.py data/release/runs/20261117T105410694264Z/candidate.csv
+```
+
+Orchestration exits **2** because approval is blocked, while tests, actual inference
+and official validation each exit **0**. The independent semantics diagnostic exits
+**2** on both files. Run manifests contain exact child commands, clean source SHA,
+configuration, input/environment identities, output hash and aggregates. Both
+fresh runs match those identities and bytes. This is same-machine repeatability
+of the new review candidate only; no old reproduction claim was carried forward.
+Focused evidence/provenance and preservation records are under ignored
+`data/kickoff-fix-20261117/`, including `baseline-diagnostics.json`,
+`corrected-evidence-diagnostics.json`, `repeat-verification.json`, test/run logs
+and the previous-artifact manifest. Restricted arrays remain local and ignored.
+
+### Remaining owners and actions
+
+- **M4/M2 owners with the integration owner:** review the kickoff-specific live-
+  evidence policy and the observed early release/first-half latency. Use invented
+  cases or permitted other-match evidence to justify any further general rule.
+  The present automatic context plus motion cannot reliably distinguish all
+  pre-kickoff movement from authorized play. Do not substitute the published
+  boundary into inference or fit thresholds to remove these 70 frames.
+- **M5 + a second teammate:** independently reproduce whichever source is accepted
+  after that policy review, recording operator, machine, commands and matching
+  hash. `48d67bb`/the file above may be reproduced now for investigation, but a
+  matching hash cannot clear the failed semantics gate.
+- **M5/team lead:** packaging, registered team identity, exact final file/hash,
+  submitter/backup, access/cutoff checks and explicit submission approval remain
+  pending. Every further source/byte change requires its own frozen record and
+  repeatability/independent reproduction evidence.
+
+The result-record update changes only this status document and release gates.
+The review candidate remains bound to `48d67bb`. Independent reproduction,
+submission approval and the **failed published kickoff diagnostic** remain
+blocked. Nothing was pushed, merged into main, sent externally or submitted.
