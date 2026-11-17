@@ -28,7 +28,7 @@ class EvidenceConfig:
     player_active_mps: float = 2.0
     collective_fraction: float = 2 / 3
     pause_s: float = 0.40
-    restart_memory_s: float = 3.0
+    pause_context_s: float = 30.0
     restart_ball_mps: float = 2.0
     restart_displacement_m: float = 0.8
     boundary_dead_weight: float = 0.65
@@ -36,14 +36,25 @@ class EvidenceConfig:
     pause_anchor_score: float = 0.50
     movement_restart_weight: float = 0.80
     tag_restart_weight: float = 0.10
+    # --- added: restart without active players, corroboration, tracking jumps ---
+    ball_restart_weight: float = 0.60
+    restart_ball_displacement_m: float = 2.0
+    restart_ball_sustain_s: float = 0.20
+    restart_consume_s: float = 1.0
+    weak_dead_cap: float = 0.30
+    still_strong_s: float = 2.0
+    exit_memory_s: float = 2.0
+    min_out_samples: int = 3
+    max_ball_mps: float = 80.0
 
     def __post_init__(self):
         for name, value in asdict(self).items():
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(name + " must be finite and positive")
-        if not isinstance(self.min_nearby_players, int):
-            raise ValueError("min_nearby_players must be an integer")
-        for name in ("collective_fraction", "pause_anchor_score"):
+        for name in ("min_nearby_players", "min_out_samples"):
+            if not isinstance(getattr(self, name), int):
+                raise ValueError(name + " must be an integer")
+        for name in ("collective_fraction", "pause_anchor_score", "weak_dead_cap"):
             if getattr(self, name) > 1:
                 raise ValueError(name + " must be <= 1")
         if self.min_motion_s > self.motion_window_s:
@@ -52,8 +63,13 @@ class EvidenceConfig:
             raise ValueError("slow player threshold must be below active threshold")
         if self.ball_slow_mps >= self.restart_ball_mps:
             raise ValueError("slow ball threshold must be below restart threshold")
+        if self.weak_dead_cap >= self.pause_anchor_score:
+            raise ValueError("weak_dead_cap must stay below pause_anchor_score")
+        if self.restart_ball_displacement_m < self.restart_displacement_m:
+            raise ValueError("ball-only displacement must be >= the player-backed one")
         for names in (("boundary_dead_weight", "tag_dead_weight"),
-                      ("movement_restart_weight", "tag_restart_weight")):
+                      ("movement_restart_weight", "tag_restart_weight"),
+                      ("ball_restart_weight", "tag_restart_weight")):
             if sum(getattr(self, name) for name in names) > 1:
                 raise ValueError("feature weights must sum to <= 1")
 
@@ -103,10 +119,20 @@ class StoppageEvidence:
         self.half = None
         self._clear_motion()
 
-    def _clear_motion(self):
+    def _clear_ball_motion(self):
+        """Short-term ball history only (gap or tracking jump). Keeps the long-term context."""
         self.history.clear()
         self.pause_since = None
-        self.anchor = None  # (time_s, x_m, y_m); evidence memory, not a D state
+        self.out_run = 0
+        self.move_since = None
+
+    def _clear_motion(self):
+        """Everything, used at a half boundary."""
+        self._clear_ball_motion()
+        self.last_out_t = None
+        # Long-term pause context: dict(last_t, x, y, restart_t). Evidence memory, not a D state.
+        # It lives apart from the 0.2 s ball history so a late restart can still be recognised.
+        self.context = None
 
     def __call__(self, index, observation):
         if (type(index) is not int or not 0 <= index < self.n_frames
@@ -135,16 +161,26 @@ class StoppageEvidence:
         if len(sides) == 1 and None not in sides:
             result["restart_side"] = active_sides[0]
         c = self.config
-        if self.anchor is not None and t - self.anchor[0] > c.restart_memory_s:
-            self.anchor = None
+
+        # LONG memory: the pause context only expires when it has gone unsupported for
+        # pause_context_s. A missing ball does not refresh it, and it is NOT the 0.2 s history.
+        if self.context is not None and t - self.context["last_t"] > c.pause_context_s:
+            self.context = None
 
         ball = _position(observation.get("ball"))
         if ball is None:
             self.pause_since = None
+            self.out_run = 0
+            self.move_since = None
             return result  # no positive evidence from disappearance or tag alone
+
+        # SHORT memory: ball history. A gap or an impossible jump starts it over.
         if self.history and t - self.history[-1][0] > c.max_ball_gap_s + 1e-9:
-            self.history.clear()
-            self.pause_since = None
+            self._clear_ball_motion()
+        if self.history:
+            last_t, last_x, last_y = self.history[-1]
+            if math.hypot(ball[0] - last_x, ball[1] - last_y) / (t - last_t) > c.max_ball_mps:
+                self._clear_ball_motion()  # tracking jump: do not trust motion across it
         self.history.append((t, *ball))
         while self.history and t - self.history[0][0] > c.motion_window_s + 1e-9:
             self.history.popleft()
@@ -156,6 +192,15 @@ class StoppageEvidence:
             ball_speed = sum(math.hypot(b[1] - a[1], b[2] - a[2])
                              for a, b in zip(self.history, list(self.history)[1:])) / dt
 
+        x, y = ball
+        edge = min(x, self.pitch[0] - x, y, self.pitch[1] - y)
+
+        # Exit clue: several CONSECUTIVE samples on/over the line (one noisy point is not enough).
+        self.out_run = self.out_run + 1 if edge <= 0 else 0
+        if self.out_run >= c.min_out_samples:
+            self.last_out_t = t
+        exit_seen = self.last_out_t is not None and t - self.last_out_t <= c.exit_memory_s
+
         speeds = []
         for player in observation.get("players", ()):
             pos = _position(player)
@@ -164,36 +209,68 @@ class StoppageEvidence:
                     and speed is not None and math.isfinite(speed) and speed >= 0
                     and math.dist(ball, pos) <= c.nearby_radius_m):
                 speeds.append(speed)  # already m/s; no slot trajectories
-        if ball_speed is None or len(speeds) < c.min_nearby_players:
-            self.pause_since = None
-            return result
 
-        result["dead_available"] = True
-        slow = sum(speed <= c.player_slow_mps for speed in speeds) / len(speeds)
-        active = sum(speed >= c.player_active_mps for speed in speeds) / len(speeds)
-        x, y = ball
-        edge = min(x, self.pitch[0] - x, y, self.pitch[1] - y)
-        boundary = max(0.0, min(1.0, (c.boundary_margin_m - edge) / c.boundary_margin_m))
-        pause = (ball_speed <= c.ball_slow_mps and slow >= c.collective_fraction
-                 and (boundary > 0 or tagged))
-        if pause:
-            if self.pause_since is None:
-                self.pause_since = t
-            if t - self.pause_since + 1e-9 >= c.pause_s:
-                result["dead_score"] = (c.boundary_dead_weight * boundary
-                                        + c.tag_dead_weight * tagged) * slow
-                if result["dead_score"] >= c.pause_anchor_score:
-                    self.anchor = (t, x, y)
+        # ---- stoppage evidence (needs ball motion AND enough nearby players) ----
+        active = None
+        if ball_speed is not None and len(speeds) >= c.min_nearby_players:
+            result["dead_available"] = True
+            slow = sum(speed <= c.player_slow_mps for speed in speeds) / len(speeds)
+            active = sum(speed >= c.player_active_mps for speed in speeds) / len(speeds)
+            boundary = max(0.0, min(1.0, (c.boundary_margin_m - edge) / c.boundary_margin_m))
+            pause = (ball_speed <= c.ball_slow_mps and slow >= c.collective_fraction
+                     and (boundary > 0 or tagged))
+            if pause:
+                if self.pause_since is None:
+                    self.pause_since = t
+                if t - self.pause_since + 1e-9 >= c.pause_s:
+                    score = (c.boundary_dead_weight * boundary + c.tag_dead_weight * tagged) * slow
+                    # Near the line and slow is also what some live play looks like. Strong
+                    # evidence needs one more independent clue; otherwise the score is capped.
+                    corroborated = (tagged or exit_seen
+                                    or t - self.pause_since + 1e-9 >= c.still_strong_s)
+                    if boundary > 0 and not corroborated:
+                        score = min(score, c.weak_dead_cap)
+                    result["dead_score"] = score
+                    if score >= c.pause_anchor_score:
+                        self.context = dict(last_t=t, x=x, y=y, restart_t=None)
+            else:
+                self.pause_since = None
         else:
             self.pause_since = None
 
-        # Availability needs an observed supported pause in recent same-half history.
-        result["restart_available"] = self.anchor is not None
-        if (self.anchor is not None and edge >= 0 and ball_speed >= c.restart_ball_mps
-                and math.dist(ball, self.anchor[1:]) >= c.restart_displacement_m
+        # ---- restart evidence (needs ball motion and a recent pause context) ----
+        context = self.context
+        if context is None or ball_speed is None:
+            self.move_since = None
+            return result
+        result["restart_available"] = True
+        inside = edge >= 0
+        away = math.dist(ball, (context["x"], context["y"]))
+        fast = inside and ball_speed >= c.restart_ball_mps
+
+        # Path A: the ball leaves AND most nearby players are running again.
+        score_a = 0.0
+        if (fast and active is not None and away >= c.restart_displacement_m
                 and active >= c.collective_fraction):
-            result["restart_score"] = (c.movement_restart_weight * active
-                                       + c.tag_restart_weight * tagged)
+            score_a = c.movement_restart_weight * active + c.tag_restart_weight * tagged
+
+        # Path B: the ball alone, sustained, far from the pause spot. Works even when the
+        # nearby players stay still (a thrower, a goal kick, a ball carried away).
+        if fast and away >= c.restart_ball_displacement_m:
+            if self.move_since is None:
+                self.move_since = t
+        else:
+            self.move_since = None
+        score_b = 0.0
+        if self.move_since is not None and t - self.move_since + 1e-9 >= c.restart_ball_sustain_s:
+            score_b = c.ball_restart_weight + c.tag_restart_weight * tagged
+
+        result["restart_score"] = max(score_a, score_b)
+        if result["restart_score"] > 0:
+            if context["restart_t"] is None:
+                context["restart_t"] = t
+            elif t - context["restart_t"] + 1e-9 >= c.restart_consume_s:
+                self.context = None  # the restart has been reported; forget the pause
         return result
 
 
@@ -238,6 +315,7 @@ def check_stream(*, game=GAME, data_dir=None):
     """Exhaust real M3 -> M4, assert the contract, return only aggregate diagnostics."""
     counts = {"frames": 0, "dead_available": 0, "restart_available": 0,
               "dead_positive": 0, "restart_positive": 0,
+              "dead_strong": 0, "restart_strong": 0,
               "side_H": 0, "side_A": 0, "side_unknown": 0}
     ranges = {name: [1.0, 0.0] for name in ("dead_score", "restart_score")}
     for index, row in enumerate(iter_stoppage_evidence(game=game, data_dir=data_dir)):
@@ -250,6 +328,7 @@ def check_stream(*, game=GAME, data_dir=None):
                 raise ValueError("invalid score/availability")
             counts[prefix + "_available"] += available
             counts[prefix + "_positive"] += score > 0
+            counts[prefix + "_strong"] += score >= EvidenceConfig().pause_anchor_score
             ranges[prefix + "_score"][0] = min(ranges[prefix + "_score"][0], score)
             ranges[prefix + "_score"][1] = max(ranges[prefix + "_score"][1], score)
         side = row["restart_side"]

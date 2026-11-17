@@ -207,15 +207,16 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(row["dead_available"])
         self.assertFalse(row["restart_available"])
 
-    def test_anchor_expiry_and_bounded_history(self):
-        producer = self.producer(halves=((1, 0, 199),))
+    def test_context_expiry_and_bounded_history(self):
+        # The pause context now lives pause_context_s (30 s), not 3 s. See test_stoppage_resume.py.
+        producer = self.producer(halves=((1, 0, 1999),))
         self.paused(producer)
-        for i in range(16, 95):
+        for i in range(16, 800):                      # ball missing for about 31 s
             producer(i, observation(i, x=None))
-        self.assertIsNone(producer.anchor)
-        row = producer(95, observation(95, x=5, speeds=(3, 3, 3)))
+        self.assertIsNone(producer.context)
+        row = producer(800, observation(800, x=5, speeds=(3, 3, 3)))
         self.assertEqual(row["restart_score"], 0)
-        for i in range(96, 190):
+        for i in range(801, 900):
             producer(i, observation(i, x=5, speeds=(3, 3, 3)))
             self.assertLessEqual(len(producer.history), math.ceil(.2 * 25) + 2)
 
