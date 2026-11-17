@@ -1,5 +1,7 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
+Team plans and progress reviews: [docs/README.md](docs/README.md).
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 
