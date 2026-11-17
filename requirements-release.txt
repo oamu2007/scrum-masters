@@ -1,0 +1,14 @@
+# Exact versions for producing and checking the release candidate (module1/RUNNER.md).
+#
+# requirements.txt includes this authoritative pin set. Actual combined-run evidence and
+# independent reproduction status are recorded in docs/INTEGRATION_STATUS.md.
+#
+#     python --version                              # Python 3.12.10
+#     python -m pip install -r requirements-release.txt
+#
+# Python itself cannot be pinned from a requirements file: use 3.12.10. The runner needs only
+# NumPy; pandas is for the scorer and validator. The last two lines are what pandas installs.
+numpy==2.5.4
+pandas==3.1.1
+python-dateutil==4.0.0
+tzdata==2026.6

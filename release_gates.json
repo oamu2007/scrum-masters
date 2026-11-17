@@ -1,0 +1,75 @@
+{
+  "_comment": "Compuertas de aprobacion de release. Un archivo puede ser CSV valido y aun asi NO aprobado. Solo se pasa una compuerta a 'passed' con evidencia escrita (comando, fecha, quien, hash). Mientras algo diga 'blocked', approve_release() no aprueba.",
+  "gates": [
+    {
+      "id": "M2_integrated",
+      "description": "M2 integrado y con pruebas propias pasando en el repo",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 kickoff follow-up: 297 maintained tests pass in Python 3.12.10 with requirements-release.txt pins; existing regressions unchanged, 14 actual-pipeline/diagnostic tests added. M1 self-test, 13 M2 standalone tests and M4 tag assertions pass. See appended docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "M4_integrated",
+      "description": "M4 integrado y con pruebas propias pasando en el repo",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 kickoff follow-up: 297 maintained tests pass in Python 3.12.10 with requirements-release.txt pins; existing regressions unchanged, 14 actual-pipeline/diagnostic tests added. M1 self-test, 13 M2 standalone tests and M4 tag assertions pass. See appended docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "scenarios_with_real_M2_M4",
+      "description": "Casos pase/desvio, D persistente, reinicio tardio/lado desconocido y reset por mitad ejecutados con M4 y M2 reales",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 kickoff follow-up: 297 maintained tests pass in Python 3.12.10 with requirements-release.txt pins; existing regressions unchanged, 14 actual-pipeline/diagnostic tests added. M1 self-test, 13 M2 standalone tests and M4 tag assertions pass. See appended docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "M1_carries_data",
+      "description": "Comprobado que M1 transporta los datos de M2/M4 hasta el CSV",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 kickoff follow-up: 297 maintained tests pass in Python 3.12.10 with requirements-release.txt pins; existing regressions unchanged, 14 actual-pipeline/diagnostic tests added. M1 self-test, 13 M2 standalone tests and M4 tag assertions pass. See appended docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "candidate_frozen",
+      "description": "Recorded review candidate source/configuration/hash; not behavioral or submission approval",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 source 48d67bb271ce0dd50d0d6a1ce9dd24111a32fe78; review candidate E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01. Published kickoff diagnostic still fails; see docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "independent_reproduction",
+      "description": "Otra persona del equipo regenero el CSV con SHA-256 identico",
+      "status": "blocked",
+      "reason": "M5 + a second teammate: after review of the unresolved kickoff semantics, independently regenerate the chosen NEW source and compare hash; 48d67bb is currently a reproducible review candidate, not approved replacement. No independent run exists.",
+      "evidence": ""
+    },
+    {
+      "id": "pinned_environment",
+      "description": "Documented project-local pinned runtime and maintained suite",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 kickoff follow-up: 297 maintained tests pass in Python 3.12.10 with requirements-release.txt pins; existing regressions unchanged, 14 actual-pipeline/diagnostic tests added. M1 self-test, 13 M2 standalone tests and M4 tag assertions pass. See appended docs/INTEGRATION_STATUS.md."
+    },
+    {
+      "id": "same_machine_repeatability",
+      "description": "Two fresh integrated processes and run directories give the same hash",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 fresh runs 20261117T105211791158Z and 20261117T105410694264Z: 297 tests each, generation and official validator exit 0, identical E533FCDDF4522A1E2F7CB2F12E15DEDD65C7C0E9508FBF9EDA3F1652E81D0C01. Matching source/config/input/environment. Engineering repeatability only; not accuracy or independent reproduction."
+    },
+    {
+      "id": "submission_approval",
+      "description": "Independent sign-off, packaging and explicit submission approval",
+      "status": "blocked",
+      "reason": "Blocked by kickoff semantics, absent independent reproduction, and pending M5/team registered-name packaging, submitter/access/cutoff checks and explicit approval. No submission authorized.",
+      "evidence": ""
+    },
+    {
+      "id": "published_kickoff_diagnostic",
+      "description": "Published FAQ pre-second-kickoff semantics check, separate from format and inference",
+      "status": "blocked",
+      "reason": "FAILED on new review candidate: FAQ interval has D 2864, A 54, H 1, X 15; 70/2934 remain non-D. Actual M4 emitted 25 strong restart samples before published kickoff. Also a new 12-frame D prefix at first-half kickoff. M4/M2 owners must reassess kickoff live-evidence policy using permitted general evidence, not fit this interval.",
+      "evidence": "kickoff_check.py exits 2 on both fresh candidate files; aggregate evidence in data/kickoff-fix-20261117/corrected-evidence-diagnostics.json and docs/INTEGRATION_STATUS.md."
+    }
+  ]
+}
