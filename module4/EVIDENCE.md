@@ -1,5 +1,58 @@
 # M4 tracking evidence contract
 
+## Possession-quality proposal — November 17, 2026
+
+The isolated quality branch adds **corroborated set-piece dwell**. This supersedes
+the old all-duration 0.15 ceiling on tagged interior pauses below. It does not
+change M1, M2, the transport schema, half-start prior or restart motion gates.
+The historical adoption decision at the end of this document applies to the old
+source, not this proposal. Review and reproduction remain separate.
+
+An ordinary automatic set-piece phase can support a pause anywhere on the pitch
+when **every observed frame for at least 1.0 second** has a usable ball, at least
+three nearby players with valid speeds, and at least 2/3 of those players at or
+below 1.5 m/s. The ball's bounding-box diagonal over that interval must be at most
+1.0 m. This is spatial confinement, not accumulated path speed: small back-and-forth
+tracking jitter can have a large path speed without the ball leaving its spot.
+A common unspent phase must cover the entire interval; adjacent tags cannot pool
+short observations. Missing ball/player evidence, insufficient collective quiet,
+tracking jumps, and half resets interrupt this new history. It uses no slot identity.
+
+Support is `tagged_pause_weight * minimum_slow_fraction_over_dwell`, with default
+weight 0.80. Thus the minimum qualifying default score is `0.80 * 2/3 > 0.50`.
+The output is the maximum of this and the existing boundary evidence, never a
+sum. A positive dwell supplies its own observed baseline for `dead_available`.
+Supported dwell seeds the existing restart eligibility; actual M2 still needs
+three consecutive strong reports and labels only the confirming frame. In an
+ideal 25 fps pause starting at frame 0, first support is frame 25 and D starts at
+27 (1.08 s latency). There is no backfill, endpoint mask or disappearance-as-D rule.
+
+After a three-report restart burst, the phase IDs supporting the pause and all
+currently active phases are spent **for this new admission path only**. This is
+necessary because phase intervals can continue into live play: a later quiet hold
+must not repeatedly reuse that same phase. A fresh phase can admit a fresh pause.
+Spent IDs survive observation gaps and reset at each half. Ordinary supported
+boundary stops can still rearm independently. Unreported eligibility, ball-only
+recovery, side handling and retirement remain as documented below. `Kick Off
+(Start)` phases are excluded from this path and retain their existing policy.
+
+New immutable settings: `tagged_pause_s=1.0`, `tagged_pause_span_m=1.0`,
+`tagged_pause_weight=0.80`. The duration must be at least `pause_s`; the span must
+be smaller than `restart_ball_displacement_m`; the weight is in (0,1]. All must
+be finite positive reals. Non-frame-aligned durations round up to the first
+observed spanning sample. History is bounded by `ceil(duration*fps)+2`; phase
+storage is bounded by the supplied windows. No inferred point is interpolated.
+
+The one-second observation is longer than the old 0.4 s pause gate; the one-metre
+spread accommodates local sub-metre noise while staying below the two-metre
+ball-only departure requirement. Weight 0.8 matches the scale of fully corroborated
+boundary evidence. These are explicit physical/temporal operating assumptions,
+not calibrated probabilities or tuned match constants. Tags and tracking may have
+correlated errors. False/overlong tags during live holds or slow drift can create
+false D; missed tags and intermittent observations can still miss stops. Sparse
+quick restarts can be missed after a new inferred D. No accuracy gain is claimed
+from synthetic passes or label totals. See [the result](../docs/POSSESSION_QUALITY_RESULT.md).
+
 ## Kickoff initialization correction — November 17, 2026
 
 The integrated follow-up retains the five per-frame fields and all motion/score
@@ -110,7 +163,8 @@ context; neither endpoint implies stopped/resumed play. Side disappears at end.
    >=3 consecutive samples on/outside the line (`e<=0`), most recent within <=2 s.
    **Elapsed slow play never removes this cap.** Unsupported live drift or hold
    0.2 m inside the line stays weak regardless of duration. Tagged centre-pitch
-   pause is at most 0.15; tag-only missing ball is unavailable.
+   pause on this original short-history path is at most 0.15; the new longer
+   spatial-dwell path above can supply strong evidence. Tag-only missing ball is unavailable.
 4. **Eligibility.** Dead support >=0.50 stores/refreshes one fixed-size record
    containing the supported ball point, last support time and report status.
    Unreported eligibility survives any same-half gap. There is no age timeout
@@ -231,8 +285,9 @@ integration-adoption decision below accepts this limitation for the stated scope
 it does not establish that a particular movement is referee-authorized play.
 Persistent outside sensor bias or wrong tags can falsely support D.
 
-Interior fouls/offside without boundary support remain poorly covered; weak tagged
-interior pauses cannot enter default D. Unreported eligibility can persist the
+Interior fouls/offside without qualifying tagged dwell or boundary support remain
+poorly covered. Brief/unsupported tagged interior pauses cannot enter default D.
+Unreported eligibility can persist the
 whole half, so fresh unrelated motion after an ambiguous prior stop remains a
 risk. Curved/reversing genuine motion may fail progress gates. Missing samples
 are never filled; sparse pulses may fail M2 confirmation. Duplicate/incomplete

@@ -46,6 +46,10 @@ class EvidenceConfig:
     exit_memory_s: float = 2.0
     min_out_samples: int = 3
     max_ball_mps: float = 80.0
+    # A longer spatial dwell tolerates local tracking jitter during set pieces.
+    tagged_pause_s: float = 1.0
+    tagged_pause_span_m: float = 1.0
+    tagged_pause_weight: float = 0.80
 
     def __post_init__(self):
         for name, value in asdict(self).items():
@@ -54,7 +58,7 @@ class EvidenceConfig:
         for name in ("min_nearby_players", "min_out_samples", "restart_report_samples"):
             if not isinstance(getattr(self, name), int):
                 raise ValueError(name + " must be an integer")
-        for name in ("collective_fraction", "pause_anchor_score", "weak_dead_cap"):
+        for name in ("collective_fraction", "pause_anchor_score", "weak_dead_cap", "tagged_pause_weight"):
             if getattr(self, name) > 1:
                 raise ValueError(name + " must be <= 1")
         if self.min_motion_s > self.motion_window_s:
@@ -67,6 +71,10 @@ class EvidenceConfig:
             raise ValueError("weak_dead_cap must stay below pause_anchor_score")
         if self.restart_ball_displacement_m < self.restart_displacement_m:
             raise ValueError("ball-only displacement must be >= the player-backed one")
+        if self.tagged_pause_s < self.pause_s:
+            raise ValueError("tagged_pause_s must be >= pause_s")
+        if self.tagged_pause_span_m >= self.restart_ball_displacement_m:
+            raise ValueError("tagged_pause_span_m must be < ball-only restart displacement")
         for names in (("boundary_dead_weight", "tag_dead_weight"),
                       ("movement_restart_weight", "tag_restart_weight"),
                       ("ball_restart_weight", "tag_restart_weight")):
@@ -103,6 +111,7 @@ class StoppageEvidence:
         self.n_frames = source_frames("tactical", game)
         self.halves = tuple(half_video_blocks(game))  # inclusive games.py blocks
         self.windows = []
+        self.kickoff_window_ids = set()
         kickoff_windows = []
         for window in windows:
             start, end, side = (window[k] for k in ("start_frame", "end_frame", "side"))
@@ -111,6 +120,7 @@ class StoppageEvidence:
                 raise ValueError("invalid half-open restart window")
             self.windows.append((start, end, side))
             if start < end and (window.get("type") or "").strip().lower() == "kick off (start)":
+                self.kickoff_window_ids.add(len(self.windows) - 1)
                 kickoff_windows.append((start, end, side))
         self.windows = tuple(self.windows)
         # A unique automatic half-start kickoff is an initial dead-ball prior,
@@ -124,6 +134,7 @@ class StoppageEvidence:
                 self.initial_dead_frames.append(first)
         self.initial_dead_frames = tuple(self.initial_dead_frames)
         self.history = deque(maxlen=math.ceil(self.config.motion_window_s * self.fps) + 2)
+        self.tagged_history = deque(maxlen=math.ceil(self.config.tagged_pause_s * self.fps) + 2)
         self.reset()
 
     def reset(self):
@@ -135,6 +146,7 @@ class StoppageEvidence:
     def _clear_ball_motion(self):
         """Short-term ball history only (gap or tracking jump). Keeps the long-term context."""
         self.history.clear()
+        self.tagged_history.clear()
         self.pause_since = None
         self.out_run = 0
         self.move_since = None
@@ -150,8 +162,42 @@ class StoppageEvidence:
         # Age cannot erase an as-yet-unreported supported pause. Fresh motion is
         # rebuilt independently; a confirmed output burst consumes this record.
         self.context = None
+        self.spent_tag_windows = set()
         self.kickoff_pending = False
         self.kickoff_start = None
+
+    def _tagged_pause(self, t, ball, slow, window_ids):
+        """Consecutive observed collective quiet and bounded ball spread.
+
+        A common unspent phase must cover the entire dwell. Missing/active
+        observations interrupt it; phase endpoints never emit a transition.
+        Spatial spread, unlike accumulated path length, tolerates local jitter.
+        """
+        c = self.config
+        if (self.kickoff_pending or not window_ids or slow is None
+                or slow < c.collective_fraction):
+            self.tagged_history.clear()
+            return 0.0, set()
+        self.tagged_history.append((t, *ball, slow, frozenset(window_ids)))
+        # Keep the first sample spanning the requested duration, rounding up to
+        # an observed frame for non-frame-aligned configurations (never down).
+        while (len(self.tagged_history) > 1
+               and t - self.tagged_history[1][0] + 1e-9 >= c.tagged_pause_s):
+            self.tagged_history.popleft()
+        if t - self.tagged_history[0][0] + 1e-9 < c.tagged_pause_s:
+            return 0.0, set()
+        common = set(window_ids)
+        for sample in self.tagged_history:
+            common.intersection_update(sample[4])
+        if not common:
+            return 0.0, set()
+        xs = [p[1] for p in self.tagged_history]
+        ys = [p[2] for p in self.tagged_history]
+        # Bounding-box diagonal upper-bounds every observed pairwise distance.
+        span = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+        if span > c.tagged_pause_span_m:
+            return 0.0, set()
+        return c.tagged_pause_weight * min(p[3] for p in self.tagged_history), common
 
     def __call__(self, index, observation):
         if (type(index) is not int or not 0 <= index < self.n_frames
@@ -177,7 +223,8 @@ class StoppageEvidence:
         if half is None:
             return result
 
-        active_sides = [side for start, end, side in self.windows if start <= index < end]
+        active_windows = {j for j, (start, end, _) in enumerate(self.windows) if start <= index < end}
+        active_sides = [self.windows[j][2] for j in sorted(active_windows)]
         tagged = bool(active_sides)
         # Unknown or conflicting simultaneous tags do not become a known side.
         sides = set(active_sides)
@@ -195,6 +242,7 @@ class StoppageEvidence:
 
         ball = _position(observation.get("ball"))
         if ball is None:
+            self.tagged_history.clear()
             self.pause_since = None
             self.out_run = 0
             self.move_since = None
@@ -243,11 +291,12 @@ class StoppageEvidence:
                 speeds.append(speed)  # already m/s; no slot trajectories
 
         # ---- stoppage evidence (needs ball motion AND enough nearby players) ----
-        active = None
-        if ball_speed is not None and len(speeds) >= c.min_nearby_players:
-            result["dead_available"] = True
+        active = slow = None
+        if len(speeds) >= c.min_nearby_players:
             slow = sum(speed <= c.player_slow_mps for speed in speeds) / len(speeds)
             active = sum(speed >= c.player_active_mps for speed in speeds) / len(speeds)
+        if ball_speed is not None and slow is not None:
+            result["dead_available"] = True
             boundary = max(0.0, min(1.0, (c.boundary_margin_m - edge) / c.boundary_margin_m))
             pause = (ball_speed <= c.ball_slow_mps and slow >= c.collective_fraction
                      and (boundary > 0 or tagged))
@@ -263,11 +312,24 @@ class StoppageEvidence:
                         score = min(score, c.weak_dead_cap)
                     result["dead_score"] = score
                     if score >= c.pause_anchor_score:
-                        self.context = dict(last_t=t, x=x, y=y, restart_t=None)
+                        self.context = dict(last_t=t, x=x, y=y, restart_t=None,
+                                            tagged_windows=active_windows - self.spent_tag_windows)
             else:
                 self.pause_since = None
         else:
             self.pause_since = None
+
+        # Corroborated set-piece dwell is location-independent. It is a distinct
+        # strong conjunction, not a larger weight on a tag alone. Keep ordinary
+        # untagged boundary evidence and its weak cap unchanged.
+        dwell_score, supporting_windows = self._tagged_pause(
+            t, ball, slow, active_windows - self.spent_tag_windows - self.kickoff_window_ids)
+        if dwell_score > result["dead_score"]:
+            result["dead_score"] = dwell_score
+            result["dead_available"] = True  # the dwell supplies its own observed baseline
+        if dwell_score >= c.pause_anchor_score:
+            self.context = dict(last_t=t, x=x, y=y, restart_t=None,
+                                tagged_windows=supporting_windows)
 
         # Initial kickoff eligibility belongs to M4, while persistent D belongs
         # to M2. Before the approximate phase arrives, unrelated warm-up movement
@@ -320,6 +382,11 @@ class StoppageEvidence:
             if self.report_run >= c.restart_report_samples and context["restart_t"] is None:
                 context["restart_t"] = self.report_since
                 self.kickoff_pending = False
+                # Phases can extend into live play. Do not reuse the same phase
+                # to call a later quiet live hold a new set-piece stoppage.
+                self.spent_tag_windows.update(context.get("tagged_windows", ()))
+                self.spent_tag_windows.update(active_windows)
+                self.tagged_history.clear()
         else:
             self.report_run = 0
             self.report_since = None

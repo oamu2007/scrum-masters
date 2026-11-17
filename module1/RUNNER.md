@@ -38,7 +38,7 @@ unavailable distances are NaN. Team availability implies visible ball. Available
 zero evidence is legal. Restart availability is independent of team availability;
 H/A/None side context alone is not positive restart evidence.
 
-## Unchanged component policy
+## Component policy
 
 M1 uses `exp(-distance/tau)` with tau=3 metres. Corrected M2 defaults require
 score >=0.10, margin >0.05 and 12 consecutive control samples; dead and restart
@@ -51,8 +51,11 @@ M4's unique automatic Kick Off (Start) prior and fresh-motion eligibility; M2
 initializes those tagged halves in D and otherwise retains X initialization.
 See the current kickoff section of M4's contract for ambiguity and timing limits.
 
-M4's accepted restricted envelope, including ball-only retrieval ambiguity and
-whole-half unreported eligibility, is in [EVIDENCE.md](../module4/EVIDENCE.md).
+The quality proposal adds M4's one-second, tag-corroborated collective spatial
+pause and one-use phase admission; its configuration is included automatically
+in the existing report. The five M4 fields and all M2 defaults remain unchanged.
+M4's envelope, including ball-only retrieval ambiguity and whole-half unreported
+eligibility, is in [EVIDENCE.md](../module4/EVIDENCE.md).
 Tests and format validity do not establish match accuracy.
 
 ## API and compatibility

@@ -147,10 +147,15 @@ class WeakSignalTests(unittest.TestCase):
                 self.assertLess(top, 0.5)
                 self.assertFalse(any(in_d))
 
-    def test_tag_alone_and_known_side_alone_never_enter_d(self):
+    def test_tag_with_sustained_collective_pause_can_enter_d(self):
+        # Intentionally supersedes the old 0.15 ceiling: this fixture contains
+        # tracking corroboration, not a tag alone. Keep missing-ball negatives.
         top, in_d = self.max_dead([(52.65, STILL)] * 60, [window("H", 0, 100)])
-        self.assertLessEqual(top, 0.15 + 1e-9)
-        self.assertFalse(any(in_d))
+        self.assertAlmostEqual(top, .8)
+        self.assertFalse(any(in_d[:27]))
+        self.assertTrue(all(in_d[27:]))
+
+    def test_tag_alone_and_known_side_alone_never_enter_d(self):
         rows = play(make([window("H", 0, 100)]), [(None, STILL)] * 30)
         self.assertEqual(rows[5]["restart_side"], "H")
         self.assertFalse(any(actual_states(self.m2, [(None, STILL)] * 30, [window("H", 0, 100)])))
