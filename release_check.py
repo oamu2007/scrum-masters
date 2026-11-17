@@ -97,7 +97,8 @@ GATES_FILE = os.path.join(ROOT, "release_gates.json")
 EVIDENCE_NAME = "evidence.json"
 REQUIRED_GATES = {"M2_integrated", "M4_integrated", "scenarios_with_real_M2_M4",
                   "M1_carries_data", "candidate_frozen", "independent_reproduction",
-                  "pinned_environment", "same_machine_repeatability", "submission_approval"}
+                  "pinned_environment", "same_machine_repeatability", "submission_approval",
+                  "published_kickoff_diagnostic"}
 
 
 def load_gates(path=None):

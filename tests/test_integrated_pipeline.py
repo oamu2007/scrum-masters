@@ -106,6 +106,7 @@ class IntegratedPipelineTests(unittest.TestCase):
         e = {k: np.zeros(n) for k in rp.FLOAT_FIELDS + rp.M4_FLOAT_FIELDS}
         e.update({k: np.ones(n, dtype=bool) for k in rp.BOOL_FIELDS + rp.M4_BOOL_FIELDS})
         e["restart_side"] = np.full(n, None, dtype=object)
+        e["initial_dead"] = np.zeros(n, dtype=bool)
         e["score_home"][:] = .8
         e["score_away"][:] = .1
         labels = rp.decode_match(e, n, games.GAME)

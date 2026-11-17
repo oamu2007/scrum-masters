@@ -19,7 +19,9 @@ is wrapped recursively read-only; the same wrapper goes to actual M1 `score_fram
 and an instance of actual M4 `StoppageEvidence`. M4 loads automatic Smart Tagging
 windows once; it does not create a second tracking reader. Compact NumPy arrays
 retain all seven M1 fields and all five M4 fields, without rounding or retaining
-the tracking dictionaries. Unknown/extra/missing producer keys and invalid scalar
+the tracking dictionaries. M4's automatic kickoff-context prior is also transported
+as `initial_dead`, a Boolean array true only at supported graded-half starts.
+Unknown/extra/missing producer keys and invalid scalar
 types fail before assignment can coerce them.
 
 Actual `modulos.modulo2.modulo2` receives exactly:
@@ -27,6 +29,7 @@ Actual `modulos.modulo2.modulo2` receives exactly:
 - M1: `score_home`, `score_away`, `ball_visible`, `home_available`, `away_available`.
 - M4: `dead_score`, `dead_available`, `restart_score`, `restart_available`, `restart_side`.
 - Native inclusive `games.half_video_blocks(GAME)` triples, unchanged.
+- M4's `initial_dead` prior as an explicit keyword; missing transport fails.
 
 Distances remain validated diagnostics, not M2 inputs. Arrays must be one-dimensional
 and exactly aligned. Scores are finite real numbers in [0,1], flags are Boolean,
@@ -43,7 +46,10 @@ confirmation require three consecutive available scores >=0.50. Labels change on
 the confirmation frame. Initial and unknown/conflicting restart side can yield X.
 Default simultaneous strong evidence priority remains dead. Every half starts
 fresh, and all frames outside the native inclusive halves are X. X is also legal
-inside halves. No threshold or M4 algorithm was changed for integration.
+inside halves. Thresholds remain unchanged. The scoped kickoff follow-up adds
+M4's unique automatic Kick Off (Start) prior and fresh-motion eligibility; M2
+initializes those tagged halves in D and otherwise retains X initialization.
+See the current kickoff section of M4's contract for ambiguity and timing limits.
 
 M4's accepted restricted envelope, including ball-only retrieval ambiguity and
 whole-half unreported eligibility, is in [EVIDENCE.md](../module4/EVIDENCE.md).
@@ -52,7 +58,7 @@ Tests and format validity do not establish match accuracy.
 ## API and compatibility
 
 `collect_evidence(tau, game, data_dir, *, mode='integrated', windows=None)` returns
-12 named arrays. `windows=None` loads automatic tags; an explicit iterable is useful
+13 named arrays (the original 12 plus `initial_dead`). `windows=None` loads automatic tags; an explicit iterable is useful
 for invented fixtures. `decode_match(evidence, n_frames, game, *, mode='integrated')`
 returns one H/A/D/X label per frame and validates outside-half labels.
 Missing M2 or M4 is an error; no silent fallback is allowed.

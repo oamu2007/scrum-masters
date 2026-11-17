@@ -1,5 +1,10 @@
 # Integration status — November 17, 2026
 
+**Current work: kickoff-state follow-up.** The original freeze/result below is
+preserved as historical execution evidence, including its limited 283-test gate.
+It does not cover the subsequently demonstrated FAQ kickoff discrepancy. See
+the appended kickoff follow-up for the new rule, candidate and remaining limits.
+
 This is execution evidence for the combined checkout, separate from the preserved
 historical component reviews. No possession-accuracy claim, independent teammate
 sign-off, publication or submission is implied.
@@ -246,3 +251,96 @@ at `d150058`, M4 at `325e073`, on their original branches. Their working files a
 checkouts are preserved. `git ls-files data` lists only `data/README.md`; candidate
 CSV, evidence, environments and local logs are ignored. Historical reviews were
 not rewritten. Nothing was pushed, merged into main, sent externally or submitted.
+
+## Kickoff-state follow-up — November 17, 2026
+
+Starting checkout verified clean on `integration-attempt` at
+`3dec1799e6878f118fc367fde17669c916d88703`. The prior frozen source remains
+`90d1f4efa969f21b0b932d770e1011d23a7ed14d`. Both prior run directories and every
+file in them are hash-recorded in ignored
+`data/kickoff-fix-20261117/previous-artifacts.json` and are preserved unchanged.
+
+### Root cause and executed baseline diagnosis
+
+The FAQ explicitly distinguishes graded-half start from kickoff. M2 previously
+initialized X, then treated twelve credible M1 proximity samples as sufficient
+for H/A, implicitly assuming live play. M1 supplies distance evidence, not live
+status. M4 discarded kickoff type while keeping only generic set-piece context;
+its interior pause support could not establish D, and restart evidence required
+an earlier supported boundary pause. Thus no component represented waiting for
+a half-start kickoff. The same initial-live assumption affects the first half
+and any untagged interior stop; established D already correctly requires a restart.
+
+A fresh baseline M3 -> M1/M4 -> M2 scan reproduced every frozen label exactly.
+For FAQ frames 110808..113741: **H 2,235; A 688; X 11; D 0**. Of 2,934 frames,
+2,370 have observed ball and 1,716 meet M2's proximity credibility gates;
+there are zero strong dead or restart samples (maximum dead score 0).
+Automatic supplied tags contain one nonempty Kick Off (Start) window per half,
+each 125 frames; the first overlaps graded start, the second is still upcoming.
+Both have unknown side. These are aggregate diagnostics, not human annotations.
+No public-window scoring, video annotation, external match annotations or tuning
+was performed. Baseline evidence arrays stay ignored locally.
+
+`games.py`'s burned-in second kickoff clock anchor converts to 113741, whereas
+FAQ and the existing tagging alignment constant specify 113742. The new isolated
+`kickoff_check.py` explicitly uses the FAQ reference, checking all 2,934 frames
+inclusively; it does not silently substitute the clock anchor. This diagnostic
+constant is never imported or consulted by inference. Native graded halves and
+all existing tracking/frame alignment remain unchanged.
+
+### General correction and ownership
+
+M4 recognizes a unique nonempty automatic **Kick Off (Start)** window intersecting
+a graded half and exposes that half start as an initial-D prior. Missing or
+multiple matches supply no prior. This uses type and supplied approximate timing,
+not published kickoff anchors, half-number special cases or label masks.
+The runner retains all existing full-precision arrays and transports an additional
+strict Boolean `initial_dead` array. It is true only at supported half starts.
+M2 validates that constraint and initializes persistent D there, resetting every
+counter; close players cannot release D. The new M2 keyword is optional for
+existing component callers, preserving their previous X initialization.
+
+M4 suspends ordinary boundary eligibility while the initial kickoff is pending.
+Before the approximate phase starts, warm-up movement is not restart support.
+At/after its start, the first observed ball seeds a fresh origin. Existing A/B
+motion, displacement, progress, availability and three-sample report rules then
+apply without threshold changes. Neither tag entry nor expiry directly releases
+D. Supported movement can resume even after expiry; side then remains unknown.
+A qualified report clears the pending kickoff once; normal stoppage behavior
+resumes. All context resets independently at each half.
+
+This fixes the demonstrated missing state/context boundary. It does **not** prove
+referee authorization: early/late/incorrect automatic tags can bias the waiting
+period; pre-kickoff movement may resemble a restart; an already-live half can
+receive a D prefix during confirmation. Missing/ambiguous tags retain the old
+untagged X/proximity acquisition policy, so that broader ambiguity remains.
+No general interior-foul detector, new tracking system or parameter search was added.
+
+### Acceptance and safe regeneration
+
+Fourteen new maintained tests in `tests/test_kickoff_pipeline.py` use actual
+M1/M4, runner and M2: pre-kickoff stationary proximity, supported/late resumption,
+live graded start, missing observations/tags, conflicting kickoff/side context,
+approximate tag entry/expiry, warm-up motion, jitter, subsequent turnover and
+ordinary stoppage, fresh second half, dropped/shifted/malformed initial prior,
+real automatic-tag extraction, and the inclusive published diagnostic alignment.
+The previous 283 tests retain their behavioral expectations; the native-half
+array fixture only adds a false initial-prior array required by the revised schema.
+
+New-source test and generation results follow below after freeze. The old
+candidate's repeatability and candidate-frozen gate records are historical and
+have been reset for these changed bytes. Independent teammate reproduction and
+submission approval remain blocked. All run artifacts remain ignored under data/.
+
+Pre-freeze verification: **297 maintained tests pass, no skips** (283 retained
+plus 14 new methods). M1 self-test, 13 standalone M2 sequence tests and M4 tag
+assertions pass. Whitespace checks pass. Existing proximity/motion thresholds,
+units, missingness and full-precision transport are unchanged. The only existing
+test edit is the explicit false initial-prior array in the native-half fixture.
+The complete test log is `data/kickoff-fix-20261117/freeze-tests.log`.
+
+Canonical generation remains `python run_release.py --data-dir <bundle>` with
+the verified local pinned environment and OPENBLAS_NUM_THREADS/OMP_NUM_THREADS=1.
+The new source will be committed before generation; old output paths are never
+reused. Exact source SHA, run paths, hashes and observed diagnostics are recorded
+in the result section below after the two fresh runs.

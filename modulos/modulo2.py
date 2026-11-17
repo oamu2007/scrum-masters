@@ -16,8 +16,9 @@ Ejemplo en el runner:
             **m4, half_blocks=half_video_blocks(GAME))
 
 Reglas de transicion
- 1. Cada half se decodifica por separado con estado limpio (X, sin confirmaciones
-    pendientes). Fuera de los halves se emite X. Nada se arrastra entre halves.
+ 1. Cada half se decodifica por separado con estado limpio (X, o D con el prior
+    explicito initial_dead de M4; sin confirmaciones pendientes). Fuera de los
+    halves se emite X. Nada se arrastra entre halves.
  2. Control creible de un lado: balon visible, home_available Y away_available,
     max(score) >= min_score y |sh - sa| > min_margin. Nunca se gana por comparar
     contra el 0 de un equipo sin datos.
@@ -185,8 +186,8 @@ def _validar(entradas, half_blocks, config):
 
 
 def _decodificar_half(ini, fin, sh, sa, visible, h_disp, a_disp, dead_ok, restart_ok,
-                      lados, config, etiquetas):
-    estado = 'X'          # estado limpio al inicio de cada half
+                      lados, config, etiquetas, initial_dead=False):
+    estado = 'D' if initial_dead else 'X'  # explicit producer prior; otherwise unchanged
     pendiente, n_pend = None, 0
     n_dead, n_rest, lados_vistos = 0, 0, set()
     for i in range(ini, fin + 1):
@@ -227,13 +228,15 @@ def _decodificar_half(ini, fin, sh, sa, visible, h_disp, a_disp, dead_ok, restar
 
 def modulo2(score_home, score_away, ball_visible, home_available, away_available,
             dead_score, dead_available, restart_score, restart_available, restart_side,
-            half_blocks, config=CONFIG_M2):
+            half_blocks, config=CONFIG_M2, *, initial_dead=None):
     """Una etiqueta H/A/D/X por frame; valida todas las entradas antes de decodificar.
 
     half_blocks contiene triples inclusivos (half, inicio, fin), directamente de
     games.half_video_blocks(GAME). [] produce solo X; entradas vacias con [] dan [].
     Pares, bloques fuera de rango y evidencia/configuracion invalida dan ValueError
     con el nombre del campo. Nunca modifica los arreglos o bloques del llamador.
+    initial_dead es opcional, Boolean (n,), true solo en inicios de halves con
+    soporte de M4 para una espera de kickoff. No es una mascara de etiquetas.
     """
     entradas = dict(score_home=score_home, score_away=score_away, ball_visible=ball_visible,
                     home_available=home_available, away_available=away_available,
@@ -242,8 +245,19 @@ def modulo2(score_home, score_away, ball_visible, home_available, away_available
                     restart_side=restart_side)
     (n, bloques, sh, sa, visible, h_disp, a_disp,
      dead_ok, restart_ok, lados) = _validar(entradas, half_blocks, config)
+    if initial_dead is None:
+        initial = np.zeros(n, dtype=bool)
+    else:
+        initial = _vector(initial_dead, "initial_dead")
+        if initial.shape != (n,) or initial.dtype.kind != "b":
+            raise ValueError("initial_dead debe ser Boolean 1-D con la misma longitud")
+        starts = np.zeros(n, dtype=bool)
+        for ini, _ in bloques:
+            starts[ini] = True
+        if np.any(initial & ~starts):
+            raise ValueError("initial_dead solo admite soporte al inicio de un half")
     etiquetas = ['X'] * n
     for ini, fin in bloques:
         _decodificar_half(ini, fin, sh, sa, visible, h_disp, a_disp, dead_ok,
-                          restart_ok, lados, config, etiquetas)
+                          restart_ok, lados, config, etiquetas, initial_dead=initial[ini])
     return etiquetas

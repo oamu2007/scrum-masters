@@ -8,7 +8,7 @@ Pipeline
 --------
 1. M3 streams the tactical tracking ONCE (iter_tracking_frames).
 2. Actual M1 and M4 receive the same recursively read-only observation.
-3. Actual corrected M2 receives ten full-precision arrays and native inclusive half triples.
+3. Actual M2 receives ten full-precision arrays, M4's initial-dead prior and native half triples.
 4. Every frame is written: H / A / D / X inside the graded halves, X outside them.
 
 Integrated mode is the default. The historical M1-only decoder requires --mode fallback;
@@ -100,6 +100,7 @@ def validate_evidence(evidence, n_frames, *, mode="integrated"):
         raise ValueError("unknown pipeline mode: " + str(mode))
     if mode == "integrated":
         expected.update(M4_FIELDS)
+        expected.add("initial_dead")
     missing = expected - set(evidence)
     if missing:
         raise ValueError("evidence is missing fields: {}".format(sorted(missing)))
@@ -110,7 +111,7 @@ def validate_evidence(evidence, n_frames, *, mode="integrated"):
             raise ValueError("evidence[{!r}] has shape {}, expected ({},)".format(
                 name, array.shape, n_frames))
 
-    for name in BOOL_FIELDS + (M4_BOOL_FIELDS if mode == "integrated" else ()):
+    for name in BOOL_FIELDS + (M4_BOOL_FIELDS + ("initial_dead",) if mode == "integrated" else ()):
         if np.asarray(evidence[name]).dtype != np.bool_:
             raise ValueError("evidence[{!r}] must be boolean, got {}".format(
                 name, np.asarray(evidence[name]).dtype))
@@ -177,6 +178,8 @@ def collect_evidence(tau, game, data_dir, *, mode="integrated", windows=None):
         fields.update({name: np.zeros(n_frames) for name in M4_FLOAT_FIELDS})
         fields.update({name: np.zeros(n_frames, dtype=bool) for name in M4_BOOL_FIELDS})
         fields["restart_side"] = np.full(n_frames, None, dtype=object)
+        initial_dead = np.zeros(n_frames, dtype=bool)
+        initial_dead[list(producer.initial_dead_frames)] = True
 
     count = 0
     source = iter_tracking_frames(game=game, data_dir=data_dir)
@@ -210,6 +213,8 @@ def collect_evidence(tau, game, data_dir, *, mode="integrated", windows=None):
 
     if count != n_frames:
         raise RuntimeError("expected {} tracking frames, read {}".format(n_frames, count))
+    if mode == "integrated":
+        fields["initial_dead"] = initial_dead
     validate_evidence(fields, n_frames, mode=mode)
     return fields
 
@@ -259,7 +264,8 @@ def decode_match(evidence, n_frames, game, *, mode="integrated"):
     blocks = half_video_blocks(game)
     if mode == "integrated":
         m2, _ = integrated_modules()
-        labels = m2.modulo2(**{k: evidence[k] for k in M1_FIELDS + M4_FIELDS}, half_blocks=blocks)
+        labels = m2.modulo2(**{k: evidence[k] for k in M1_FIELDS + M4_FIELDS},
+                            half_blocks=blocks, initial_dead=evidence["initial_dead"])
     else:
         labels = ["X"] * n_frames
         for _half, first, last in blocks:
@@ -321,6 +327,8 @@ def main(argv=None):
         if args.mode == "integrated":
             m2, m4 = integrated_modules()
             report.update(m2_config=asdict(m2.CONFIG_M2), m4_config=asdict(m4.EvidenceConfig()))
+            report["initial_dead_halves"] = [h for h, first, _ in half_video_blocks(args.game)
+                                              if evidence["initial_dead"][first]]
             report["evidence"] = {prefix: dict(available=int(evidence[prefix + "_available"].sum()),
                 positive=int((evidence[prefix + "_score"] > 0).sum()),
                 strong=int((evidence[prefix + "_score"] >= .5).sum())) for prefix in ("dead", "restart")}

@@ -103,13 +103,26 @@ class StoppageEvidence:
         self.n_frames = source_frames("tactical", game)
         self.halves = tuple(half_video_blocks(game))  # inclusive games.py blocks
         self.windows = []
+        kickoff_windows = []
         for window in windows:
             start, end, side = (window[k] for k in ("start_frame", "end_frame", "side"))
             if (type(start) is not int or type(end) is not int or end < start
                     or side not in ("H", "A", None)):
                 raise ValueError("invalid half-open restart window")
             self.windows.append((start, end, side))
+            if start < end and (window.get("type") or "").strip().lower() == "kick off (start)":
+                kickoff_windows.append((start, end, side))
         self.windows = tuple(self.windows)
+        # A unique automatic half-start kickoff is an initial dead-ball prior,
+        # not an exact restart timestamp. Ambiguous/missing tags supply no prior.
+        self.kickoffs = {}
+        self.initial_dead_frames = []
+        for half, first, last in self.halves:
+            candidates = [w for w in kickoff_windows if w[0] <= last and w[1] > first]
+            if len(candidates) == 1:
+                self.kickoffs[half] = candidates[0]
+                self.initial_dead_frames.append(first)
+        self.initial_dead_frames = tuple(self.initial_dead_frames)
         self.history = deque(maxlen=math.ceil(self.config.motion_window_s * self.fps) + 2)
         self.reset()
 
@@ -137,6 +150,8 @@ class StoppageEvidence:
         # Age cannot erase an as-yet-unreported supported pause. Fresh motion is
         # rebuilt independently; a confirmed output burst consumes this record.
         self.context = None
+        self.kickoff_pending = False
+        self.kickoff_start = None
 
     def __call__(self, index, observation):
         if (type(index) is not int or not 0 <= index < self.n_frames
@@ -154,6 +169,10 @@ class StoppageEvidence:
         if half != self.half or half is None:
             self._clear_motion()
             self.half = half
+            kickoff = self.kickoffs.get(half)
+            if kickoff is not None:
+                self.kickoff_pending = True
+                self.kickoff_start = kickoff[0]
         result = _empty()
         if half is None:
             return result
@@ -232,7 +251,7 @@ class StoppageEvidence:
             boundary = max(0.0, min(1.0, (c.boundary_margin_m - edge) / c.boundary_margin_m))
             pause = (ball_speed <= c.ball_slow_mps and slow >= c.collective_fraction
                      and (boundary > 0 or tagged))
-            if pause:
+            if pause and not self.kickoff_pending:
                 if self.pause_since is None:
                     self.pause_since = t
                 if t - self.pause_since + 1e-9 >= c.pause_s:
@@ -249,6 +268,17 @@ class StoppageEvidence:
                 self.pause_since = None
         else:
             self.pause_since = None
+
+        # Initial kickoff eligibility belongs to M4, while persistent D belongs
+        # to M2. Before the approximate phase arrives, unrelated warm-up movement
+        # is not restart evidence. Once it arrives, seed a fresh observed origin
+        # and apply the SAME motion/progress/confirmation rules as other restarts.
+        # Neither the window's start nor its end emits positive restart support.
+        if self.kickoff_pending:
+            if index < self.kickoff_start:
+                return result
+            if self.context is None:
+                self.context = dict(last_t=t, x=x, y=y, restart_t=None)
 
         # ---- restart evidence (fresh motion plus unconsumed same-half eligibility) ----
         context = self.context
@@ -289,6 +319,7 @@ class StoppageEvidence:
             # Three consecutive outputs match the corrected default M2 receiver.
             if self.report_run >= c.restart_report_samples and context["restart_t"] is None:
                 context["restart_t"] = self.report_since
+                self.kickoff_pending = False
         else:
             self.report_run = 0
             self.report_since = None

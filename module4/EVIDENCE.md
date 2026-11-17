@@ -1,5 +1,42 @@
 # M4 tracking evidence contract
 
+## Kickoff initialization correction — November 17, 2026
+
+The integrated follow-up retains the five per-frame fields and all motion/score
+thresholds below, and adds `StoppageEvidence.initial_dead_frames`: a tuple of
+graded-half start indices with a unique, nonempty automatic **Kick Off (Start)**
+window intersecting that half. Type matching is case-insensitive. Missing or
+multiple matching windows supply no prior. No published kickoff anchor or
+match-specific frame constant is used. The runner transports this as a Boolean
+`initial_dead` array with true only at those half starts; M2 starts those halves
+in persistent D, irrespective of player proximity. This is an explicit automatic
+context prior, not a claim that missing tracking is positive dead evidence.
+
+For a pending kickoff, ordinary boundary-pause eligibility is suspended. Before
+the approximate kickoff phase starts, warm-up motion does not qualify as a
+restart. At/after the phase start, the first observed ball seeds a fresh origin;
+the existing A/B movement, displacement, progress and three-report rules apply.
+The tag start does not emit restart support. Tag expiry neither resumes play nor
+erases pending eligibility. Missing/jittery/stationary observations cannot resume
+play. A half already live at its graded start can establish movement without a
+previously observed pause. A confirmed burst consumes the pending kickoff once;
+subsequent stoppages retain the prior component behavior. Half resets clear it.
+
+This is a limited heuristic, not referee observation: early/late or false tags
+can misplace the waiting period; genuine pre-kickoff movement can resemble a
+restart; a live graded start can receive a brief D prefix while motion confirms.
+Missing/ambiguous kickoff tags leave the old X/proximity acquisition policy in
+place, so untagged interior stoppages remain unresolved. No global assumption
+that every half begins dead is made. The approximate phase start is an eligibility
+boundary, **not an exact kickoff timestamp or a label-mask endpoint**.
+
+Standalone five-array builders remain compatible and do not silently add the
+initial prior. Callers requiring kickoff initialization must use the producer's
+`initial_dead_frames` explicitly, as the canonical runner does. Current results,
+including the separate published-interval diagnostic, are in
+`docs/INTEGRATION_STATUS.md`. The component evidence/history below predates this
+scoped initialization correction.
+
 Updated November 17, 2026 for F2/F3/F5/F6. This component returns uncertain
 evidence, never possession labels or referee decisions. M2 owns persistent D and
 H/A/X transitions. M1 runner transport remains external work.

@@ -4,6 +4,13 @@ File validity, behavioral acceptance, fresh generation, same-machine repeatabili
 independent teammate reproduction and submission approval are separate claims.
 A valid file never establishes possession accuracy or authorizes submission.
 
+The November 17 kickoff follow-up also requires the separate published FAQ check:
+`python kickoff_check.py <fresh-run>/candidate.csv`. Exit 0 means its 2,934-frame
+pre-second-kickoff interval matches D; exit 2 reports a semantics discrepancy.
+It is diagnostic only and never feeds predictions or parameter selection. New
+source/bytes require new run records and independent reproduction; previous
+candidate hashes and approvals do not transfer.
+
 ## Pinned environment
 
 Use Python **3.12.10** in a project-local virtual environment:
