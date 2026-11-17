@@ -32,15 +32,15 @@
     {
       "id": "candidate_frozen",
       "description": "Candidato final congelado (commit y SHA-256 anotados)",
-      "status": "blocked",
-      "reason": "Se congela despues de que M2/M4 queden testeados.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17: clean integrated source 90d1f4efa969f21b0b932d770e1011d23a7ed14d; fixed shipped configuration; candidate SHA-256 BE262BB468B3610289F94F4A45CB8D8A1D8879F675C2668E6267F68E62FCE62D. Full run manifests and docs/INTEGRATION_STATUS.md record exact identities."
     },
     {
       "id": "independent_reproduction",
       "description": "Otra persona del equipo regenero el CSV con SHA-256 identico",
       "status": "blocked",
-      "reason": "Requiere candidato congelado.",
+      "reason": "M5 + second teammate: regenerate independently from source 90d1f4efa969f21b0b932d770e1011d23a7ed14d with pinned environment and identical licensed inputs; record operator/machine/command/hash. No independent run has occurred.",
       "evidence": ""
     },
     {
@@ -53,9 +53,9 @@
     {
       "id": "same_machine_repeatability",
       "description": "Two fresh integrated processes and run directories give the same hash",
-      "status": "blocked",
-      "reason": "Full candidate runs not yet executed.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17: separate processes and fresh data/release/runs/20261117T102236151903Z and 20261117T102424208440Z, 199319 rows each, official validator exit 0, identical BE262BB468B3610289F94F4A45CB8D8A1D8879F675C2668E6267F68E62FCE62D; matching source/config/input/environment. This is not independent reproduction."
     },
     {
       "id": "submission_approval",

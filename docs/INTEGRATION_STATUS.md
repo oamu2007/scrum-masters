@@ -130,9 +130,94 @@ Canonical full generation/repeat commands are in [RELEASE.md](../RELEASE.md).
 
 ## Candidate and remaining gates
 
-Source/configuration freeze and candidate run results will be appended after the
-local integration commit. No full combined candidate is claimed at this checkpoint.
+**Actual M3 -> M1/M4 -> M2 runs successfully. Behavioral acceptance, official
+format validation, fresh generation and same-machine repeatability pass.**
 Independent teammate reproduction and submission approval remain blocked.
+
+The source/configuration freeze is local commit
+**`90d1f4efa969f21b0b932d770e1011d23a7ed14d`** (runner/boundary/release fixes,
+tests and documentation). Both full runs used that clean SHA and the pinned
+environment above. Subsequent result-record changes affect only this status
+document and `release_gates.json`; reproduce inference from the frozen source SHA.
+
+| Execution | Ignored run directory relative to integration root | Required step results |
+|---|---|---|
+| First candidate | `data/release/runs/20261117T102236151903Z/` | 283 tests pass, generation 0, official validator 0, file/hash check passes |
+| Fresh repeat | `data/release/runs/20261117T102424208440Z/` | 283 tests pass, generation 0, official validator 0, expected hash matches |
+
+Each directory contains `candidate.csv`, `pipeline.json`, `evidence.json`,
+`tests.log`, `generation.log` and `official_validator.log`. Both CSVs have
+**199,319 ordered rows, frames 0..199318**, 1,682,773 bytes, and SHA-256:
+
+```text
+BE262BB468B3610289F94F4A45CB8D8A1D8879F675C2668E6267F68E62FCE62D
+```
+
+Primary candidate absolute path:
+`C:/Users/oamu2/more-than-a-hack-2027/data/integration-attempt/data/release/runs/20261117T102236151903Z/candidate.csv`.
+The second is a separate process, fresh output directory and full reread, not a
+copy. Both run records agree exactly on source, configuration, input identities,
+environment, output hash and aggregate report. Local verification is recorded in
+`data/integration-20261117/repeat-verification.json`.
+
+| Aggregate | Full match | Half 1 | Half 2 |
+|---|---:|---:|---:|
+| H | 83,202 | 43,145 | 40,057 |
+| A | 74,894 | 36,218 | 38,676 |
+| D | 641 | 55 | 586 |
+| X inside graded halves | 120 | 49 | 71 |
+| Entries to D / exits from D | 6 / 6 | 1 / 1 | 5 / 5 |
+
+All **40,462** outside-half frames are X; total X is **40,582**. Inside-half
+abstentions are legal, not a failed gate. Native blocks are exactly
+`(1,11185,90651)` and `(2,110808,190197)`. M4 dead available/positive/strong:
+**88,292 / 1,488 / 368**; restart available/positive/strong:
+**791 / 129 / 129**, matching the accepted component aggregate record. The official
+validator reports 716 possessions, mean 8.8 s, with its documented X-gap convention.
+These are descriptive diagnostics, not accuracy, a desired count or a selection metric.
+No public-window evaluation was run.
+
+Exact full-run commands, using `$python`, thread settings and working directory above:
+
+```powershell
+& $python -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data
+& $python -B run_release.py --data-dir C:/Users/oamu2/more-than-a-hack-2027/data --expect-sha256 BE262BB468B3610289F94F4A45CB8D8A1D8879F675C2668E6267F68E62FCE62D
+```
+
+Both orchestration commands exit **2**, deliberately: every required execution
+step passed but external approval gates remained blocked. This is not a failed
+inference and is not submission approval. The manifests record the exact child
+argv for tests, canonical runner (`--mode integrated --game BAR-ATH --tau 3.0
+--out <fresh>/candidate.csv --report <fresh>/pipeline.json --data-dir <bundle>`)
+and official validator on that exact output. Their statuses are all 0.
+The first run's `candidate_frozen`/repeat gates were still pending at execution;
+the result record now passes those gates with both runs as evidence. It does not
+retroactively claim an independent review or teammate sign-off.
+
+Input identities (no restricted inputs are committed):
+
+| Input | Bytes | SHA-256 |
+|---|---:|---|
+| tactical ATD metadata | 59,057 | `327E35E32E46A647389B88F883D4F9A2AB931E3E6148AEF2FCF8F22B1E93C43A` |
+| tactical raw ATD | 195,714,285 | `F130E350D2BFDF734B7E32F072931FCCC6D015C1E837D082064875FE0A700431` |
+| automatic Smart Tagging | 261,055 | `0594D35E3DF01B9C5002372D8615E2E8EF5379AC8F4E84C5EF7A53F4304C9019` |
+
+An additional **clean source export** of the frozen commit passed all **283 tests,
+no skips**, using the project-local pinned interpreter with `MTAH_M2_ROOT` unset.
+Its M2 import path resolves inside the export, not another clone; it has no Git
+metadata or personal dependency paths. Export/test commands:
+
+```powershell
+git archive --format=zip --output=data/integration-20261117/clean-source.zip 90d1f4efa969f21b0b932d770e1011d23a7ed14d
+Expand-Archive -LiteralPath data/integration-20261117/clean-source.zip -DestinationPath data/integration-20261117/clean-checkout
+# From that fresh export, using the same absolute $python:
+& $python -B -m unittest discover -s tests -v
+```
+
+This is local clean-source verification, not an independent operator/machine.
+Actual Python/platform: 3.12.10, Windows 11 (`Windows-11-10.0.26300-SP0`).
+Full source-freeze and clean-export logs remain ignored under
+`data/integration-20261117/`; no frame-level outputs or environment files are tracked.
 
 Accepted limitations: fast in-pitch retrieval may be indistinguishable from a
 ball-only restart; unreported eligibility can last the half; interior fouls/offside
@@ -145,3 +230,19 @@ from the frozen source/pins/licensed input identities and record operator, machi
 commands and matching hash. **M5 + team lead** verify registered name, technical
 package, exact team-named CSV/hash, submitter/backup, access and official cutoff/timezone,
 and obtain submission approval. No external action is authorized here.
+
+## Final preservation and result record
+
+Rechecking both exact candidates with the updated gates yields `VALID_NOT_APPROVED`
+with **only two blockers**: independent reproduction and submission approval. File,
+fresh-run provenance and all locally executable gates pass. The result is stored
+locally in `data/integration-20261117/final-gates.json`.
+
+The final result-record commit changes only this document and `release_gates.json`;
+the candidate's source/configuration remains the frozen `90d1f4e` commit above.
+Integration stays on `integration-attempt` with intended local commits and a clean
+index/worktree after recording. Original checkout remains clean at `ef2fea6`, M2
+at `d150058`, M4 at `325e073`, on their original branches. Their working files and
+checkouts are preserved. `git ls-files data` lists only `data/README.md`; candidate
+CSV, evidence, environments and local logs are ignored. Historical reviews were
+not rewritten. Nothing was pushed, merged into main, sent externally or submitted.
