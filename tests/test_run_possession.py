@@ -56,7 +56,7 @@ def lead(evidence, first, last, side):
 
 def decode(evidence, n=N):
     with mock.patch.object(rp, "half_video_blocks", return_value=BLOCKS):
-        return rp.decode_match(evidence, n, "fake-game")
+        return rp.decode_match(evidence, n, "fake-game", mode="fallback")
 
 
 def fake_evidence(observation, tau=3.0):
@@ -65,9 +65,9 @@ def fake_evidence(observation, tau=3.0):
     return {
         "ball_visible": True,
         "d_home": float(frame),
-        "d_away": float(frame) + 1.0,
+        "d_away": float(frame) + 1.0 if frame % 2 == 0 else np.nan,
         "score_home": 0.5,
-        "score_away": 0.25,
+        "score_away": 0.25 if frame % 2 == 0 else 0.0,
         "home_available": True,
         "away_available": frame % 2 == 0,
     }
@@ -104,7 +104,7 @@ def run_collect(frames, n=5, producers=()):
             mock.patch.object(rp, "score_frame", side_effect=score), \
             mock.patch.object(rp, "PRODUCERS", list(producers)):
         try:
-            result = rp.collect_evidence(3.0, "fake-game", "fake-dir")
+            result = rp.collect_evidence(3.0, "fake-game", "fake-dir", mode="fallback")
         finally:
             pass
     return result, source, reader, calls
@@ -123,7 +123,7 @@ class CollectEvidenceTests(unittest.TestCase):
         self.assertEqual([i for i, _ in seen], [0, 1, 2, 3, 4])  # so did the extra producer
         for observation, (_, shared), original in zip(calls, seen, frames):
             self.assertIs(observation, shared)             # the same object went to both
-            self.assertIs(observation, original)
+            self.assertEqual(observation, original)
         self.assertEqual(frames, snapshot)                 # and nothing modified it
         self.assertTrue(source.closed)
 
@@ -161,7 +161,7 @@ class CollectEvidenceTests(unittest.TestCase):
                 mock.patch.object(rp, "iter_tracking_frames", return_value=source), \
                 mock.patch.object(rp, "score_frame", side_effect=fake_evidence):
             with self.assertRaises(RuntimeError):
-                rp.collect_evidence(3.0, "fake-game", None)
+                rp.collect_evidence(3.0, "fake-game", None, mode="fallback")
         self.assertTrue(source.closed)
 
 
@@ -389,7 +389,7 @@ class OutputTests(unittest.TestCase):
                     mock.patch.object(rp, "half_video_blocks", return_value=BLOCKS):
                 for name in ("one.csv", "two.csv"):
                     out = os.path.join(folder, name)
-                    self.assertEqual(rp.main(["--out", out]), 0)
+                    self.assertEqual(rp.main(["--out", out, "--mode", "fallback"]), 0)
                     with open(out, "rb") as handle:
                         outputs.append(handle.read())
         self.assertEqual(outputs[0], outputs[1])
@@ -403,7 +403,7 @@ class OutputTests(unittest.TestCase):
             with mock.patch.object(rp, "source_frames", return_value=N), \
                     mock.patch.object(rp, "collect_evidence", return_value=evidence), \
                     mock.patch.object(rp, "half_video_blocks", return_value=BLOCKS):
-                self.assertEqual(rp.main(["--out", out]), 0)
+                self.assertEqual(rp.main(["--out", out, "--mode", "fallback"]), 0)
             with open(out, newline="") as handle:
                 lines = handle.read().split("\n")
             self.assertEqual(lines[0], "frame,label")

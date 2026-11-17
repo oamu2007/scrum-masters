@@ -1,8 +1,7 @@
 # Exact versions for producing and checking the release candidate (module1/RUNNER.md).
 #
-# requirements.txt is the organisers' deliberately loose file (the scorer runs on Python 3.8 and
-# 3.11 alike) and is left unchanged. This file pins what the runner, the validator and the full
-# test suite were actually run with, so a second person can reproduce the same bytes:
+# requirements.txt includes this authoritative pin set. Actual combined-run evidence and
+# independent reproduction status are recorded in docs/INTEGRATION_STATUS.md.
 #
 #     python --version                              # Python 3.12.10
 #     python -m pip install -r requirements-release.txt

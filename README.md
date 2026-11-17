@@ -2,6 +2,14 @@
 
 Team plans and progress reviews: [docs/README.md](docs/README.md).
 
+The combined candidate uses the actual M3 → M1/M4 → M2 pipeline:
+`python run_possession.py --mode integrated --data-dir C:/path/to/bundle --out data/release/candidate.csv`.
+For fresh generation with tests, official validation and provenance, use
+`python run_release.py --data-dir C:/path/to/bundle`.
+See [release instructions](RELEASE.md), [runner contract](module1/RUNNER.md) and
+[current integration evidence](docs/INTEGRATION_STATUS.md). A format pass is not
+possession accuracy or submission approval.
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 

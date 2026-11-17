@@ -1,5 +1,3 @@
-# Everything the scorer, the validator and the tests need. Versions are PINNED (==) on purpose:
-# a release is only approved from an environment that can be rebuilt exactly.
-# Tested with Python 3.13 (see RELEASE.md). numpy 2.x / pandas 3.x need Python >= 3.11.
-numpy==2.5.3
-pandas==3.0.5
+# The combined runner, official validator and tests share one release environment.
+# Use Python 3.12.10; see RELEASE.md and docs/INTEGRATION_STATUS.md for actual results.
+-r requirements-release.txt

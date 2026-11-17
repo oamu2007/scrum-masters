@@ -1,6 +1,6 @@
 """Prove the project installs and its tests pass in a brand-new virtualenv.
 
-    python verify_clean_install.py            # requirements.txt only (what a release needs)
+    python verify_clean_install.py            # requirements-release.txt, Python 3.12.10
     python verify_clean_install.py --starter  # also requirements-starter.txt (kloppy, notebook)
 
 1. refuses any requirement that is not pinned with ==
@@ -47,7 +47,10 @@ def main(argv=None):
     parser.add_argument("--starter", action="store_true")
     args = parser.parse_args(argv)
 
-    req = os.path.join(ROOT, "requirements-starter.txt" if args.starter else "requirements.txt")
+    if sys.version_info[:3] != (3, 12, 10):
+        print("FAIL  pinned release runtime is Python 3.12.10")
+        return 1
+    req = os.path.join(ROOT, "requirements-starter.txt" if args.starter else "requirements-release.txt")
     bad = unpinned(req)
     if bad:
         print("FAIL  unpinned requirements (use name==version):")
@@ -55,7 +58,9 @@ def main(argv=None):
             print("  - " + line)
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="m5_clean_") as folder:
+    local = os.path.join(ROOT, "data", "environment-checks")
+    os.makedirs(local, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="m5_clean_", dir=local) as folder:
         venv = os.path.join(folder, "venv")
         if run([sys.executable, "-m", "venv", venv]) != 0:
             print("FAIL  could not create the virtualenv")

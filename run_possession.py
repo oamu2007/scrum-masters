@@ -7,14 +7,12 @@ The bundle directory contains tactical/. MTAH_DATA_DIR (set before Python starts
 Pipeline
 --------
 1. M3 streams the tactical tracking ONCE (iter_tracking_frames).
-2. Each unchanged observation goes to every evidence producer in PRODUCERS. Today that is M1
-   (score_frame). M4 plugs in here later without touching the loop.
-3. The decoder turns the full-precision evidence arrays into one label per frame.
-4. Every frame is written: H / A / D inside the graded halves, X outside them.
+2. Actual M1 and M4 receive the same recursively read-only observation.
+3. Actual corrected M2 receives ten full-precision arrays and native inclusive half triples.
+4. Every frame is written: H / A / D / X inside the graded halves, X outside them.
 
-The decoder below (decode_half) is a deliberately simple FALLBACK so that a valid candidate
-exists today. It uses only M1 evidence. When M2's tested decoder is ready, replace the call in
-decode_match() with it and keep everything else.
+Integrated mode is the default. The historical M1-only decoder requires --mode fallback;
+it is not eligible for integrated release gates. See module1/RUNNER.md.
 
 No ground-truth labels are read. Thresholds are fixed constants, not tuned on public labels.
 The file is written to a temporary name and renamed only after the full run succeeds, so a
@@ -22,8 +20,14 @@ failed run never leaves a partial file that looks like a submission.
 """
 
 import argparse
+from collections.abc import Mapping
+from dataclasses import asdict
+import json
+import math
+from numbers import Real
 import os
 import sys
+from types import MappingProxyType
 
 import numpy as np
 
@@ -39,20 +43,63 @@ MIN_SCORE = 0.10      # the leading side must be at least this close (exp(-d/tau
 MARGIN = 0.05         # leading side must beat the other by at least this much
 CONFIRM_FRAMES = 12   # about 0.5 s of consecutive credible opposing control before switching
 
-PRODUCERS = []  # extra per-frame evidence producers (M4 goes here); each takes an observation
+PRODUCERS = []  # legacy fallback-only diagnostic hooks; not the integrated evidence interface
 
 FLOAT_FIELDS = ("d_home", "d_away", "score_home", "score_away")
 BOOL_FIELDS = ("ball_visible", "home_available", "away_available")
+M1_FIELDS = ("score_home", "score_away") + BOOL_FIELDS
+M4_FLOAT_FIELDS = ("dead_score", "restart_score")
+M4_BOOL_FIELDS = ("dead_available", "restart_available")
+M4_FIELDS = M4_FLOAT_FIELDS + M4_BOOL_FIELDS + ("restart_side",)
 
 
-def validate_evidence(evidence, n_frames):
+def integrated_modules():
+    """Required imports fail closed; never silently replace M2 or M4."""
+    try:
+        from modulos import modulo2 as m2
+        from module4 import evidence as m4
+    except ImportError as error:
+        raise RuntimeError("Integrated mode requires corrected M2 and M4") from error
+    return m2, m4
+
+
+def readonly(value):
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: readonly(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(readonly(v) for v in value)
+    return value
+
+
+def validate_row(row, fields, index):
+    """Check scalar types before NumPy assignment can silently coerce bad evidence."""
+    if not isinstance(row, Mapping) or set(row) != set(fields):
+        raise ValueError("producer frame {} must return exactly {}".format(index, sorted(fields)))
+    for name, value in row.items():
+        if name in BOOL_FIELDS + M4_BOOL_FIELDS:
+            valid = isinstance(value, (bool, np.bool_))
+        elif name == "restart_side":
+            valid = value is None or (isinstance(value, str) and value in ("H", "A"))
+        else:
+            valid = isinstance(value, Real) and not isinstance(value, (bool, np.bool_))
+            if valid:
+                valid = (math.isnan(value) or math.isfinite(value) and value >= 0) if name.startswith("d_") else math.isfinite(value) and 0 <= value <= 1
+        if not valid:
+            raise ValueError("invalid {} at frame {}".format(name, index))
+
+
+def validate_evidence(evidence, n_frames, *, mode="integrated"):
     """Fail loudly if the evidence is not what the decoder assumes. Run before decoding.
 
-    Checks: all seven arrays exist with length n_frames; flags are boolean dtype; scores are
+    Checks: all required M1/M4 arrays exist with length n_frames; flags are boolean dtype; scores are
     finite and inside [0, 1]; distances are NaN or finite and >= 0; availability never occurs
     without a visible ball; an unavailable side has score 0 and no distance.
     """
     expected = set(FLOAT_FIELDS) | set(BOOL_FIELDS)
+    if mode not in ("integrated", "fallback"):
+        raise ValueError("unknown pipeline mode: " + str(mode))
+    if mode == "integrated":
+        expected.update(M4_FIELDS)
     missing = expected - set(evidence)
     if missing:
         raise ValueError("evidence is missing fields: {}".format(sorted(missing)))
@@ -63,21 +110,25 @@ def validate_evidence(evidence, n_frames):
             raise ValueError("evidence[{!r}] has shape {}, expected ({},)".format(
                 name, array.shape, n_frames))
 
-    for name in BOOL_FIELDS:
+    for name in BOOL_FIELDS + (M4_BOOL_FIELDS if mode == "integrated" else ()):
         if np.asarray(evidence[name]).dtype != np.bool_:
             raise ValueError("evidence[{!r}] must be boolean, got {}".format(
                 name, np.asarray(evidence[name]).dtype))
 
-    for name in ("score_home", "score_away"):
-        score = np.asarray(evidence[name], dtype=float)
+    for name in ("score_home", "score_away") + (M4_FLOAT_FIELDS if mode == "integrated" else ()):
+        score = np.asarray(evidence[name])
+        if score.dtype.kind not in "iuf":
+            raise ValueError(name + " must contain real numeric scores")
         if not np.isfinite(score).all():
             raise ValueError("evidence[{!r}] has non-finite scores".format(name))
-        if score.min() < 0.0 or score.max() > 1.0:
+        if np.any(score < 0.0) or np.any(score > 1.0):
             raise ValueError("evidence[{!r}] has scores outside [0, 1]: min {}, max {}".format(
                 name, score.min(), score.max()))
 
     for name in ("d_home", "d_away"):
-        distance = np.asarray(evidence[name], dtype=float)
+        distance = np.asarray(evidence[name])
+        if distance.dtype.kind not in "iuf":
+            raise ValueError(name + " must contain real numeric distances")
         seen = ~np.isnan(distance)
         if not np.isfinite(distance[seen]).all() or (distance[seen] < 0).any():
             raise ValueError("evidence[{!r}] has negative or infinite distances".format(name))
@@ -90,10 +141,24 @@ def validate_evidence(evidence, n_frames):
         if (np.asarray(evidence["score_" + side])[~available] != 0.0).any():
             raise ValueError("score_{} is nonzero where {} evidence is unavailable".format(
                 side, side))
+        distance = np.asarray(evidence["d_" + side])
+        if not np.isfinite(distance[available]).all() or not np.isnan(distance[~available]).all():
+            raise ValueError("d_{} must be finite when available and NaN when unavailable".format(side))
+    if mode == "integrated":
+        for prefix in ("dead", "restart"):
+            if np.any(np.asarray(evidence[prefix + "_score"])[~np.asarray(evidence[prefix + "_available"])] != 0):
+                raise ValueError(prefix + " score must be zero when unavailable")
+        if any(side is not None and (not isinstance(side, str) or side not in ("H", "A"))
+               for side in evidence["restart_side"]):
+            raise ValueError("restart_side must be H/A/None")
 
 
-def collect_evidence(tau, game, data_dir):
-    """One pass over the tracking. Returns M1's seven full-precision arrays."""
+def collect_evidence(tau, game, data_dir, *, mode="integrated", windows=None):
+    """One M3 pass, compact aligned M1/M4 arrays. None windows loads automatic tags."""
+    if not math.isfinite(tau) or tau <= 0:
+        raise ValueError("tau must be finite and positive")
+    if mode not in ("integrated", "fallback"):
+        raise ValueError("unknown pipeline mode")
     n_frames = source_frames("tactical", game)
     fields = {
         "ball_visible": np.zeros(n_frames, dtype=bool),
@@ -104,6 +169,14 @@ def collect_evidence(tau, game, data_dir):
         "home_available": np.zeros(n_frames, dtype=bool),
         "away_available": np.zeros(n_frames, dtype=bool),
     }
+    if mode == "integrated":
+        _, m4 = integrated_modules()
+        if windows is None:
+            windows = m4.restart_windows(m4.load(game=game, data_dir=data_dir))
+        producer = m4.StoppageEvidence(windows, game=game)
+        fields.update({name: np.zeros(n_frames) for name in M4_FLOAT_FIELDS})
+        fields.update({name: np.zeros(n_frames, dtype=bool) for name in M4_BOOL_FIELDS})
+        fields["restart_side"] = np.full(n_frames, None, dtype=object)
 
     count = 0
     source = iter_tracking_frames(game=game, data_dir=data_dir)
@@ -114,14 +187,21 @@ def collect_evidence(tau, game, data_dir):
             frame = observation.get("frame") if hasattr(observation, "get") else None
             if frame is None:
                 raise RuntimeError("observation {} has no 'frame' field".format(index))
-            if frame != index:
+            if isinstance(frame, (bool, np.bool_)) or not isinstance(frame, (int, np.integer)) or frame != index:
                 raise RuntimeError("tracking out of order: observation {} carries frame {}".format(
                     index, frame))
-            evidence = score_frame(observation, tau=tau)
+            shared = readonly(observation)
+            evidence = score_frame(shared, tau=tau)
+            validate_row(evidence, FLOAT_FIELDS + BOOL_FIELDS, index)
+            if mode == "integrated":
+                stopped = producer(index, shared)
+                validate_row(stopped, M4_FIELDS, index)
+                evidence = dict(evidence, **stopped)
             for name, array in fields.items():
                 array[index] = evidence[name]
-            for producer in PRODUCERS:
-                producer(index, observation)
+            if mode == "fallback":
+                for hook in PRODUCERS:
+                    hook(index, shared)
             count += 1
     finally:
         close = getattr(source, "close", None)
@@ -130,6 +210,7 @@ def collect_evidence(tau, game, data_dir):
 
     if count != n_frames:
         raise RuntimeError("expected {} tracking frames, read {}".format(n_frames, count))
+    validate_evidence(fields, n_frames, mode=mode)
     return fields
 
 
@@ -172,17 +253,33 @@ def decode_half(evidence, first, last):
     return labels
 
 
-def decode_match(evidence, n_frames, game):
+def decode_match(evidence, n_frames, game, *, mode="integrated"):
     """One legal label for every frame. X outside the graded halves."""
-    validate_evidence(evidence, n_frames)  # before any decoder (fallback or M2) touches it
-    labels = ["X"] * n_frames
-    for _half, first, last in half_video_blocks(game):
-        labels[first:last + 1] = decode_half(evidence, first, last)
+    validate_evidence(evidence, n_frames, mode=mode)
+    blocks = half_video_blocks(game)
+    if mode == "integrated":
+        m2, _ = integrated_modules()
+        labels = m2.modulo2(**{k: evidence[k] for k in M1_FIELDS + M4_FIELDS}, half_blocks=blocks)
+    else:
+        labels = ["X"] * n_frames
+        for _half, first, last in blocks:
+            labels[first:last + 1] = decode_half(evidence, first, last)
+    if len(labels) != n_frames or any(l not in ("H", "A", "D", "X") for l in labels):
+        raise RuntimeError("decoder produced an illegal label sequence")
+    inside = np.zeros(n_frames, dtype=bool)
+    for _, first, last in blocks:
+        inside[first:last + 1] = True
+    if any(label != "X" for label, graded in zip(labels, inside) if not graded):
+        raise RuntimeError("decoder produced non-X outside graded halves")
     return labels
 
 
 def write_submission(path, labels):
     """frame,label CSV. Written to a temp file and renamed so a failure leaves nothing partial."""
+    path = os.fspath(path)
+    labels = list(labels)
+    if any(label not in ("H", "A", "D", "X") for label in labels):
+        raise ValueError("illegal submission label")
     folder = os.path.dirname(os.path.abspath(path))
     os.makedirs(folder, exist_ok=True)
     tmp = path + ".tmp"
@@ -202,19 +299,33 @@ def main(argv=None):
     parser.add_argument("--out", required=True, help="submission CSV to write")
     parser.add_argument("--game", default=GAME)
     parser.add_argument("--tau", type=float, default=3.0, help="metres for exp(-d/tau)")
+    parser.add_argument("--mode", choices=("integrated", "fallback"), default="integrated")
+    parser.add_argument("--report", help="optional aggregate-only JSON report")
     args = parser.parse_args(argv)
 
     n_frames = source_frames("tactical", args.game)
+    print("mode: {}{}".format(args.mode, " (NOT integrated release eligible)" if args.mode == "fallback" else ""))
     print("reading tracking ...")
-    evidence = collect_evidence(args.tau, args.game, args.data_dir)
+    evidence = collect_evidence(args.tau, args.game, args.data_dir, mode=args.mode)
     print("  ball visible on {} of {} frames".format(int(evidence["ball_visible"].sum()), n_frames))
 
-    labels = decode_match(evidence, n_frames, args.game)
+    labels = decode_match(evidence, n_frames, args.game, mode=args.mode)
     if len(labels) != n_frames or any(l not in ("H", "A", "D", "X") for l in labels):
         raise RuntimeError("decoder produced an illegal label sequence")
 
     write_submission(args.out, labels)
     counts = {k: labels.count(k) for k in ("H", "A", "D", "X")}
+    if args.report:
+        report = dict(mode=args.mode, game=args.game, tau=args.tau, rows=n_frames, counts=counts,
+                      half_blocks=half_video_blocks(args.game))
+        if args.mode == "integrated":
+            m2, m4 = integrated_modules()
+            report.update(m2_config=asdict(m2.CONFIG_M2), m4_config=asdict(m4.EvidenceConfig()))
+            report["evidence"] = {prefix: dict(available=int(evidence[prefix + "_available"].sum()),
+                positive=int((evidence[prefix + "_score"] > 0).sum()),
+                strong=int((evidence[prefix + "_score"] >= .5).sum())) for prefix in ("dead", "restart")}
+        with open(args.report, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, indent=2, sort_keys=True)
     print("wrote {} ({} rows)  H {}  A {}  D {}  X {}".format(
         args.out, len(labels), counts["H"], counts["A"], counts["D"], counts["X"]))
     print("now validate:  python evaluation/validate_submission.py \"{}\"".format(args.out))

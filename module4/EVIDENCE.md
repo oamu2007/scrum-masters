@@ -154,11 +154,10 @@ Its control gates are score >=0.10, margin >0.05, 12 samples; simultaneous stron
 evidence defaults to dead priority. Weak scores/side alone are not decisive.
 Do not lower M2's D threshold to admit unsupported M4 categories.
 
-From M4's root select the dependency explicitly; a clean separate checkout of
-the same pinned commit is equally valid:
+In the combined integration checkout the maintained loader imports the integrated
+`modulos/modulo2.py` directly. No external clone/environment selection is needed:
 
 ```powershell
-$env:MTAH_M2_ROOT = (Resolve-Path ../m2-execution).Path
 python -B -m unittest discover -s tests -v
 python -B -m unittest discover -s tests -p test_stoppage_m2_gate.py -v
 python -B module4/test_stoppages.py
@@ -167,10 +166,9 @@ python -B -m module4.evidence --data-dir C:/path/to/licensed-bundle
 git diff --check
 ```
 
-The gate verifies HEAD and clean decoder against the pinned SHA, loads actual M2
-read-only, prints source/hash provenance, feeds actual M1 `score_frame` and actual
+The gate loads actual integrated M2, prints source/hash provenance, feeds actual M1 `score_frame` and actual
 M4 outputs, and calls shipped M2 configuration. **No TinyDecoder, duplicate state
-logic or silent skip.** Unset/wrong dependencies fail; ordinary discovery includes
+logic or silent skip.** Missing dependencies fail; ordinary discovery includes
 this gate. Compact invented arrays rebase half triples; M4 receives native frame
 IDs, except explicitly named compact adjacent-half overrides.
 
@@ -202,8 +200,8 @@ whole half, so fresh unrelated motion after an ambiguous prior stop remains a
 risk. Curved/reversing genuine motion may fail progress gates. Missing samples
 are never filled; sparse pulses may fail M2 confirmation. Duplicate/incomplete
 slots limit collective inference. No match accuracy, independent reproduction
-or full-pipeline readiness is claimed. M1 must still collect/validate these five
-returns in its single M3 loop and call actual M2; its reviewed transport is unchanged.
+or full-pipeline readiness is claimed by these component tests. Combined transport
+and release results are recorded separately in `docs/INTEGRATION_STATUS.md`.
 
 ### Integration-adoption decision — November 17, 2026
 

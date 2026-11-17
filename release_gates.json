@@ -4,30 +4,30 @@
     {
       "id": "M2_integrated",
       "description": "M2 integrado y con pruebas propias pasando en el repo",
-      "status": "blocked",
-      "reason": "Pendiente: M2 no ha subido sus ultimos cambios.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 local integration execution: accepted M2 d150058 and M4 325e073 merged; 283 maintained tests pass on Python 3.12.10 pins, including tests/test_integrated_pipeline.py and actual-M2 M4 regressions. See docs/INTEGRATION_STATUS.md."
     },
     {
       "id": "M4_integrated",
       "description": "M4 integrado y con pruebas propias pasando en el repo",
-      "status": "blocked",
-      "reason": "Pendiente: M4 no ha subido sus ultimos cambios.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 local integration execution: accepted M2 d150058 and M4 325e073 merged; 283 maintained tests pass on Python 3.12.10 pins, including tests/test_integrated_pipeline.py and actual-M2 M4 regressions. See docs/INTEGRATION_STATUS.md."
     },
     {
       "id": "scenarios_with_real_M2_M4",
       "description": "Casos pase/desvio, D persistente, reinicio tardio/lado desconocido y reset por mitad ejecutados con M4 y M2 reales",
-      "status": "blocked",
-      "reason": "Depende de M2_integrated y M4_integrated. Hoy solo corren contra el scorer con secuencias sinteticas.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 local integration execution: accepted M2 d150058 and M4 325e073 merged; 283 maintained tests pass on Python 3.12.10 pins, including tests/test_integrated_pipeline.py and actual-M2 M4 regressions. See docs/INTEGRATION_STATUS.md."
     },
     {
       "id": "M1_carries_data",
       "description": "Comprobado que M1 transporta los datos de M2/M4 hasta el CSV",
-      "status": "blocked",
-      "reason": "Depende de M2_integrated y M4_integrated.",
-      "evidence": ""
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 local integration execution: accepted M2 d150058 and M4 325e073 merged; 283 maintained tests pass on Python 3.12.10 pins, including tests/test_integrated_pipeline.py and actual-M2 M4 regressions. See docs/INTEGRATION_STATUS.md."
     },
     {
       "id": "candidate_frozen",
@@ -41,6 +41,27 @@
       "description": "Otra persona del equipo regenero el CSV con SHA-256 identico",
       "status": "blocked",
       "reason": "Requiere candidato congelado.",
+      "evidence": ""
+    },
+    {
+      "id": "pinned_environment",
+      "description": "Documented project-local pinned runtime and maintained suite",
+      "status": "passed",
+      "reason": "",
+      "evidence": "2026-11-17 Python 3.12.10, NumPy 2.5.4, pandas 3.1.1, python-dateutil 4.0.0, tzdata 2026.6 installed under data/release-env; 283 tests pass; uv pip check passes."
+    },
+    {
+      "id": "same_machine_repeatability",
+      "description": "Two fresh integrated processes and run directories give the same hash",
+      "status": "blocked",
+      "reason": "Full candidate runs not yet executed.",
+      "evidence": ""
+    },
+    {
+      "id": "submission_approval",
+      "description": "Independent sign-off, packaging and explicit submission approval",
+      "status": "blocked",
+      "reason": "M5/team: independent reproduction, registered team packaging, submitter/access/cutoff checks and explicit submission approval remain outstanding.",
       "evidence": ""
     }
   ]

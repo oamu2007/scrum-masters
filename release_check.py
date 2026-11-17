@@ -8,7 +8,7 @@ Two different questions, never mixed:
 
   1. CSV VALID     check_file(): the official validation (the same function the scorer uses),
                    then the byte-level things the official validator does not look at: exact
-                   header, no BOM, LF line endings, final newline, and X only outside the two
+                   header, no BOM, LF line endings, final newline, and X outside the two
                    halves. Says nothing about whether the labels come from a finished pipeline.
   2. RELEASE OK    approve_release(): CSV valid AND every gate in release_gates.json is
                    'passed' with written evidence AND the file belongs to a run that
@@ -95,6 +95,9 @@ def check_file(path, n_rows=None, blocks=None, expect_sha256=None, require_x_out
 
 GATES_FILE = os.path.join(ROOT, "release_gates.json")
 EVIDENCE_NAME = "evidence.json"
+REQUIRED_GATES = {"M2_integrated", "M4_integrated", "scenarios_with_real_M2_M4",
+                  "M1_carries_data", "candidate_frozen", "independent_reproduction",
+                  "pinned_environment", "same_machine_repeatability", "submission_approval"}
 
 
 def load_gates(path=None):
@@ -102,7 +105,10 @@ def load_gates(path=None):
     path = path or GATES_FILE
     try:
         with open(path, encoding="utf-8") as handle:
-            return json.load(handle)["gates"], None
+            gates = json.load(handle)["gates"]
+        if not isinstance(gates, list) or any(not isinstance(g, dict) for g in gates):
+            raise ValueError("gates must be a list of records")
+        return gates, None
     except Exception as error:
         return [], "cannot read gates file {}: {}".format(path, error)
 
@@ -136,6 +142,35 @@ def run_blockers(path, info, evidence_path=None):
         return ["cannot read {}: {}".format(evidence_path, error)]
 
     out = []
+    if not isinstance(evidence, dict):
+        return ["run evidence must be an object"]
+    if evidence.get("schema_version") != 1 or evidence.get("mode") != "integrated":
+        out.append("run is not a recorded integrated pipeline (fallback/fixture/legacy cannot pass)")
+    if info.get("rows") != GAMES[GAME]["n_video_frames"] or evidence.get("rows") != GAMES[GAME]["n_video_frames"]:
+        out.append("integrated release requires 199319 rows; short fixtures cannot approve release")
+    if os.path.normcase(os.path.abspath(evidence.get("run_dir", ""))) != os.path.normcase(os.path.dirname(os.path.abspath(path))):
+        out.append("candidate is outside its recorded run directory")
+    source = evidence.get("source", {})
+    if not isinstance(source, dict) or source.get("clean") is not True or len(str(source.get("sha", ""))) != 40:
+        out.append("missing clean source commit identity")
+    inputs = evidence.get("inputs", {})
+    if not isinstance(inputs, dict) or set(inputs) != {"atd_meta", "atd_raw", "smart_tagging"}:
+        out.append("missing exact input identities")
+    elif any(not isinstance(v, dict) or len(str(v.get("sha256", ""))) != 64 for v in inputs.values()):
+        out.append("invalid input hashes")
+    for key in ("environment", "configuration", "pipeline_report"):
+        if not isinstance(evidence.get(key), dict) or not evidence[key]:
+            out.append("missing " + key)
+    if evidence.get("official_validation_ok") is not True:
+        out.append("official validation was not recorded as successful")
+    commands = evidence.get("commands", [])
+    if (not isinstance(commands, list) or len(commands) != 3
+            or any(not isinstance(c, dict) or c.get("returncode") != 0 for c in commands)
+            or [c.get("step") for c in commands] != ["tests", "generation", "official_validator"]):
+        out.append("missing successful required commands")
+    report_path = os.path.join(os.path.dirname(os.path.abspath(path)), "pipeline.json")
+    if not os.path.isfile(report_path) or sha256_of(report_path) != evidence.get("pipeline_report_sha256"):
+        out.append("pipeline report missing or changed")
     if evidence.get("tests_ok") is not True:
         out.append("evidence says the test suite did not pass")
     if evidence.get("generation_ok") is not True:
@@ -146,7 +181,9 @@ def run_blockers(path, info, evidence_path=None):
         out.append("file name {!r} is not the generated candidate {!r}".format(
             os.path.basename(path), evidence.get("candidate_name")))
     started = evidence.get("started_at_epoch")
-    if started is not None and os.path.getmtime(path) < float(started) - 1.0:
+    if not isinstance(started, (float, int)) or isinstance(started, bool) or not np.isfinite(started):
+        out.append("missing valid generation start time")
+    elif os.path.getmtime(path) < started - 1.0:
         out.append("file is older than the run that supposedly generated it (stale file)")
     return out
 
@@ -165,6 +202,7 @@ def approve_release(path, gates_path=None, evidence_path=None, **check_kwargs):
 
     gates, gates_error = load_gates(gates_path)
     blockers = [gates_error] if gates_error else gate_blockers(gates)
+    blockers += ["missing required gate: " + name for name in sorted(REQUIRED_GATES - {g.get("id") for g in gates})]
     blockers += run_blockers(path, info, evidence_path)
     status = "VALID_NOT_APPROVED" if blockers else "APPROVED"
     return {"status": status, "problems": [], "blockers": blockers, "info": info}
@@ -189,7 +227,8 @@ def main(argv=None):
             for problem in problems:
                 print("  - " + problem)
             return 1
-        print("\nCSV VALID" + ("  (hash matches)" if args.expect_sha256 else ""))
+        scope = "FIXTURE CSV VALID" if args.rows is not None else "CSV VALID"
+        print("\n" + scope + ("  (hash matches)" if args.expect_sha256 else ""))
         print("(this is NOT release approval; run with --release for that)")
         return 0
 

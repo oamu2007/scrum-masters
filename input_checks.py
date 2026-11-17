@@ -1,4 +1,8 @@
-"""Rejection checks for the per-frame records M2/M4 hand to the labeller.
+"""Legacy M5 proposed-record checks, retained for compatibility only.
+
+These are NOT the integrated M1/M4 contract or a release gate. The maintained
+production boundary is run_possession.validate_evidence; it accepts independent
+restart availability and H/A/None context and imposes no arbitrary distance cap.
 
 M5 does not implement M2's or M4's algorithms. This module only decides whether a record is
 internally consistent enough to be trusted, so contradictory or incomplete input is REJECTED

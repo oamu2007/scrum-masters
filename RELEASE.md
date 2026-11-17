@@ -1,57 +1,78 @@
-# Release procedure (M5)
+# Reproduce the integrated candidate
 
-A **valid CSV is not an approved release.** `release_check.py` answers two different questions:
+File validity, behavioral acceptance, fresh generation, same-machine repeatability,
+independent teammate reproduction and submission approval are separate claims.
+A valid file never establishes possession accuracy or authorizes submission.
 
-| Question | Command | Exit |
-|---|---|---|
-| Is the file well-formed? | `python release_check.py file.csv` | 0 valid, 1 invalid |
-| May it be delivered? | `python release_check.py file.csv --release` | 0 approved, 1 invalid, **2 valid but blocked** |
+## Pinned environment
 
-Approval needs every gate in `release_gates.json` to be `passed` **with written evidence**, and the
-file must come from a run recorded by `run_release.py` (same SHA-256, fresh folder, tests and
-generation green). Nothing here implements M2's or M4's algorithms; it only stops delivery while
-their work is missing.
+Use Python **3.12.10** in a project-local virtual environment:
 
-## Run it
-
-```bash
-python verify_clean_install.py                      # clean venv, pinned versions, full tests
-python run_release.py --gen-cmd "<Module 1 command> {out}"
+```powershell
+python -m venv data/release-env
+$python = (Resolve-Path data/release-env/Scripts/python.exe).Path
+& $python -m pip install -r requirements-release.txt
+if ($LASTEXITCODE -ne 0) { throw 'Pinned install failed' }
+$env:OPENBLAS_NUM_THREADS = '1'
+$env:OMP_NUM_THREADS = '1'
+& $python -B -m unittest discover -s tests -v
+if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
 ```
 
-`{out}` is mandatory: the candidate is written to a **new** `release/runs/<UTC-stamp>/candidate.csv`
-every time, so an old file can never be approved by accident. The procedure stops at the first
-failure: tests -> generation -> official validator -> byte checks -> gates. Exit 0 approved,
-1 a step failed, 2 everything ran but gates are blocked.
+The authoritative pins are NumPy 2.5.4, pandas 3.1.1, python-dateutil 4.0.0 and
+tzdata 2026.6. `requirements.txt` includes that same set. Optional notebook
+requirements are not needed for inference/validation. `verify_clean_install.py`
+checks the exact interpreter and creates a fresh temporary environment under
+ignored `data/environment-checks/`. Actual install/test limitations and results
+are in `docs/INTEGRATION_STATUS.md`; no global package changes are required.
 
-Independent reproduction (another teammate, same commit, fresh clone):
+## Freeze and generate
 
-```bash
-python run_release.py --gen-cmd "<Module 1 command> {out}" --expect-sha256 <FROZEN_SHA256>
+Commit intended source/configuration and start with a clean checkout. From its root:
+
+```powershell
+& $python -B run_release.py --data-dir C:/path/to/licensed-bundle
+$generationExit = $LASTEXITCODE
+if ($generationExit -eq 1) { throw 'Required step failed; do not reuse any old CSV' }
+if ($generationExit -notin @(0, 2)) { throw 'Unexpected release failure' }
 ```
 
-## Current blockers (documented, not hidden)
+Exit **2** means generation and file validation succeeded but approval remains
+blocked. It is not permission to submit. Exit 0 additionally requires every named
+external gate to pass with evidence. Submission is a separate authorized action.
 
-| Gate | Waiting for |
-|---|---|
-| `M2_integrated`, `M4_integrated` | M2 / M4 to push their final changes |
-| `scenarios_with_real_M2_M4` | Pass/deflection, persistent D, late restart / unknown side, half-time reset run with the real M2 and M4 (today only synthetic sequences run: `tests/test_scenarios.py`) |
-| `M1_carries_data` | Check that M1 transports M2/M4 data into the CSV |
-| `candidate_frozen` | Freeze commit + SHA-256 after the above are tested |
-| `independent_reproduction` | A second person reproduces the identical SHA-256 |
+Each run creates `data/release/runs/<UTC-stamp>/` without reusing an existing path.
+It runs the full maintained suite, the actual runner with `--mode integrated`,
+the official validator, and exact byte/hash checks. Every command must succeed;
+logs remain in that run directory. It hashes the three permitted tactical inputs
+(metadata, raw ATD, automatic Smart Tagging), records a clean source SHA, full
+configuration, interpreter/packages/thread settings, command statuses, aggregate
+pipeline report and output hash. Source and inputs are checked again at the end.
+No public-label inference, training, tuning or possession-count matching occurs.
 
-To unblock a gate: run the real check, then edit that gate in `release_gates.json` to
-`"status": "passed"` and put the command, date, person and hash in `"evidence"`. A `passed` gate
-with empty evidence still blocks.
+The old `--gen-cmd`, test/validator overrides and shortened `--rows` are restricted
+to explicit `--fixture-mode`. A fixture, fallback or legacy record cannot pass an
+integrated release gate, even with a valid CSV and all textual gates marked passed.
+`input_checks.py` is a retained legacy proposed-schema utility; the authoritative
+boundary is `run_possession.validate_evidence`, tested through real producers.
 
-## Rejection cases (`input_checks.py`, `tests/test_input_rejections.py`)
+## Repeat, then reproduce independently
 
-Contradictory availability/distance (unavailable but with distance or side; available but with
-empty, negative, infinite or absurd distance) and missing fields are rejected. **The field names
-are an assumption**: update the constants at the top of `input_checks.py` when M2/M4 publish theirs.
+```powershell
+& $python -B run_release.py --data-dir C:/path/to/licensed-bundle --expect-sha256 FIRST_OUTPUT_HASH
+if ($LASTEXITCODE -notin @(0, 2)) { throw 'Fresh regeneration or hash comparison failed' }
+```
 
-## Environment
+This starts a fresh process/run directory and reruns all required steps. Matching
+hashes on the same machine establish same-machine repeatability only. M5 must
+have a second teammate start from the recorded source commit in a clean checkout,
+install the pinned environment, use identical licensed inputs and regenerate.
+Record operator, machine, environment, exact command and matching hash. Do not
+copy the original CSV and call that reproduction.
 
-`requirements.txt` is pinned (`numpy==2.5.3`, `pandas==3.0.5`), tested on Python 3.13; these
-versions need Python >= 3.11. If the team runs an older Python, pin versions that support it,
-rerun `python verify_clean_install.py`, and commit the result.
+`release_check.py candidate.csv` checks the file only. `--rows` labels it a fixture.
+`--release` additionally checks required named gates and the adjacent run record.
+The record is an auditable local manifest, not a cryptographic attestation of
+who ran it. External gates remain blocked until their evidence exists. Current
+candidate paths, hashes, gate results and remaining owners are recorded in
+`docs/INTEGRATION_STATUS.md`. Generated assets and records stay ignored under data/.

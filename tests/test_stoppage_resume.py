@@ -1,7 +1,7 @@
 """M4 tests for restarts, late returns, weak signals, sparse data and tracking jumps.
 
 Invented plays only. All consumer assertions use actual M1 score_frame and actual
-corrected M2, selected explicitly via MTAH_M2_ROOT. No alternate decoder is used.
+corrected M2 from this checkout. No alternate decoder is used.
 """
 
 import unittest

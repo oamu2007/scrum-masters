@@ -63,7 +63,7 @@ class ValidIsNotApprovedTests(unittest.TestCase):
             result = self.approve(folder, make_candidate(folder),
                                   gates_file(folder, ("passed", "blocked", "passed")))
         self.assertEqual(result["status"], "VALID_NOT_APPROVED")
-        self.assertEqual(len(result["blockers"]), 1)
+        self.assertEqual(sum("pending 1" in b for b in result["blockers"]), 1)
 
     def test_passed_without_evidence_is_blocked(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -72,11 +72,12 @@ class ValidIsNotApprovedTests(unittest.TestCase):
         self.assertEqual(result["status"], "VALID_NOT_APPROVED")
         self.assertTrue(any("no evidence" in b for b in result["blockers"]))
 
-    def test_everything_passed_with_evidence_is_approved(self):
+    def test_passed_gate_text_cannot_approve_a_short_legacy_fixture(self):
         with tempfile.TemporaryDirectory() as folder:
             result = self.approve(folder, make_candidate(folder),
                                   gates_file(folder, ("passed", "passed")))
-        self.assertEqual(result["status"], "APPROVED", result["blockers"])
+        self.assertEqual(result["status"], "VALID_NOT_APPROVED")
+        self.assertTrue(any("short fixtures" in b for b in result["blockers"]))
 
     def test_invalid_csv_is_invalid_not_merely_blocked(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -180,7 +181,7 @@ class RunReleaseStopsTests(unittest.TestCase):
         gates_path = gates_file(self.tmp.name, gates)
         test_cmd = "{} -c \"import sys; sys.exit({})\"".format(PY, 0 if tests_pass else 1)
         gen_cmd = "{} {} {{out}} {}".format(PY, gen_script, self.marker)
-        return run_release.main(["--gen-cmd", gen_cmd, "--runs-dir", self.runs, "--rows", "14",
+        return run_release.main(["--fixture-mode", "--gen-cmd", gen_cmd, "--runs-dir", self.runs, "--rows", "14",
                                  "--test-cmd", test_cmd, "--gates", gates_path])
 
     def candidates(self):
@@ -209,8 +210,8 @@ class RunReleaseStopsTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(len(self.candidates()), 1)
 
-    def test_everything_green_exits_zero(self):
-        self.assertEqual(self.run_release(self.gen_ok, gates=("passed",)), 0)
+    def test_green_fixture_never_approves_integrated_release(self):
+        self.assertEqual(self.run_release(self.gen_ok, gates=("passed",)), 2)
 
     def test_each_run_uses_a_new_folder(self):
         self.run_release(self.gen_ok)

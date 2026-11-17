@@ -1,6 +1,6 @@
 """Required actual M4 -> actual M1 scores -> corrected actual M2 acceptance gate.
 
-Set MTAH_M2_ROOT explicitly. Missing/wrong dependencies are errors, never skips.
+The combined-checkout loader uses local M2. Missing dependencies are errors, never skips.
 All observations are invented; no TinyDecoder or duplicated transition logic.
 """
 

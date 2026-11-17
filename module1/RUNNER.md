@@ -1,155 +1,92 @@
-# Release runner (M1)
+# Integrated possession runner
 
-`run_possession.py` (repository root) turns the tactical tracking into one possession label per
-video frame and writes the submission CSV. One command, no ground-truth input.
-
-## Exact commands (PowerShell, from the repository root)
-
-### 1. Environment (once)
+Canonical command from the combined checkout (Python 3.12.10):
 
 ```powershell
-python --version                                   # must print: Python 3.12.10
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-release.txt  # exact versions, see "Environment" below
-python -m pip show numpy pandas                    # confirm the installed versions
+python run_possession.py --mode integrated --data-dir C:/path/to/bundle --out data/release/candidate.csv --report data/release/pipeline.json
 ```
 
-`.venv/` must not be committed (it is listed in `.gitignore`; check before any `git add`).
+Integrated is the default. The bundle contains `tactical/`; `MTAH_DATA_DIR`, set
+before Python starts, is also supported. No ground-truth path is accepted.
+For reproducible fresh generation with tests, official validation and provenance,
+use `python run_release.py --data-dir C:/path/to/bundle`. See [RELEASE.md](../RELEASE.md).
 
-### 2. Run
+## Actual transport
+
+One M3 `iter_tracking_frames` stream is exhausted. Every frame must be an integer
+index in exact order 0..199318, with exactly 199,319 observations. Each observation
+is wrapped recursively read-only; the same wrapper goes to actual M1 `score_frame`
+and an instance of actual M4 `StoppageEvidence`. M4 loads automatic Smart Tagging
+windows once; it does not create a second tracking reader. Compact NumPy arrays
+retain all seven M1 fields and all five M4 fields, without rounding or retaining
+the tracking dictionaries. Unknown/extra/missing producer keys and invalid scalar
+types fail before assignment can coerce them.
+
+Actual `modulos.modulo2.modulo2` receives exactly:
+
+- M1: `score_home`, `score_away`, `ball_visible`, `home_available`, `away_available`.
+- M4: `dead_score`, `dead_available`, `restart_score`, `restart_available`, `restart_side`.
+- Native inclusive `games.half_video_blocks(GAME)` triples, unchanged.
+
+Distances remain validated diagnostics, not M2 inputs. Arrays must be one-dimensional
+and exactly aligned. Scores are finite real numbers in [0,1], flags are Boolean,
+unavailable scores are zero, available distances are finite/nonnegative, and
+unavailable distances are NaN. Team availability implies visible ball. Available
+zero evidence is legal. Restart availability is independent of team availability;
+H/A/None side context alone is not positive restart evidence.
+
+## Unchanged component policy
+
+M1 uses `exp(-distance/tau)` with tau=3 metres. Corrected M2 defaults require
+score >=0.10, margin >0.05 and 12 consecutive control samples; dead and restart
+confirmation require three consecutive available scores >=0.50. Labels change on
+the confirmation frame. Initial and unknown/conflicting restart side can yield X.
+Default simultaneous strong evidence priority remains dead. Every half starts
+fresh, and all frames outside the native inclusive halves are X. X is also legal
+inside halves. No threshold or M4 algorithm was changed for integration.
+
+M4's accepted restricted envelope, including ball-only retrieval ambiguity and
+whole-half unreported eligibility, is in [EVIDENCE.md](../module4/EVIDENCE.md).
+Tests and format validity do not establish match accuracy.
+
+## API and compatibility
+
+`collect_evidence(tau, game, data_dir, *, mode='integrated', windows=None)` returns
+12 named arrays. `windows=None` loads automatic tags; an explicit iterable is useful
+for invented fixtures. `decode_match(evidence, n_frames, game, *, mode='integrated')`
+returns one H/A/D/X label per frame and validates outside-half labels.
+Missing M2 or M4 is an error; no silent fallback is allowed.
+
+`--mode fallback` explicitly selects the retained historical M1-only decoder.
+It uses immediate first acquisition and the old margin >=0.05 convention, never
+emits D, and is **not eligible for an integrated release**. `decode_half` and the
+fallback-only legacy `PRODUCERS` diagnostic hooks remain available. Their historical
+regressions are retained and explicitly run in fallback mode. They are not evidence
+that integrated transport works. M1's legacy five-array tuple and rounded diagnostic
+CSV APIs remain unchanged; neither is used by integrated inference.
+
+## Output and failure behavior
+
+The UTF-8 CSV has no BOM, LF newlines, a final newline, and `frame,label` header.
+The writer atomically replaces `--out` only after complete successful inference.
+A failed run can leave a prior output intact; therefore a file check alone never
+proves regeneration. The release procedure always creates a unique ignored run
+directory and writes successful evidence only after all required steps pass.
+`--report` writes aggregate JSON/configuration only. Any required read, inference,
+write or report failure returns nonzero. Use one process per output path.
+
+## Tests
 
 ```powershell
-python run_possession.py --data-dir C:\path\to\bundle --out data/release/<team_name>.csv
+python -B -m unittest discover -s tests -v
+python -B module1/control_scores.py --test
+python -B modulos/test_modulo2.py -q
+python -B module4/test_stoppages.py
 ```
 
-- `--data-dir`: bundle root, the folder that contains `tactical/` (for a default checkout this is
-  `data`). If omitted, `MTAH_DATA_DIR` (set before Python starts) or the repository default is used.
-- `--out`: submission CSV. Replace `<team_name>` with the registered team name.
-- `--tau`: metres for the proximity score `exp(-distance / tau)`. Default `3.0`; the release run
-  uses the default.
-- `--game`: defaults to the match in `games.py`.
-
-### 3. Validate the exact file
-
-```powershell
-python evaluation/validate_submission.py "data/release/<team_name>.csv"
-Get-FileHash -Algorithm SHA256 "data/release/<team_name>.csv"
-```
-
-### 4. Tests
-
-```powershell
-python -m unittest discover -s tests -v            # 66 tests expected: 36 scoring/reader + 30 runner
-python module1/control_scores.py --test            # prints: self-test OK
-python -m starter.tactical_tracking --data-dir C:\path\to\bundle   # needs the real data; optional
-```
-
-All unit tests use invented data and need no match files, labels or network access.
-
-## Environment
-
-| Item | Version | Needed by |
-|---|---|---|
-| Python | 3.12.10 | everything |
-| NumPy | 2.5.4 | runner, M1, M3 |
-| pandas | 3.1.1 | scorer and validator, not the runner |
-| python-dateutil, tzdata | 4.0.0, 2026.6 | installed by pandas |
-
-These are the versions the runner and the full test suite were run with. They are pinned in
-`requirements-release.txt`. The organisers' `requirements.txt` is deliberately loose (the scorer
-supports Python 3.8 and 3.11 alike) and is left unchanged; it is enough to run the scorer, but it
-does not fix the versions of a release run. Python itself cannot be pinned from a requirements
-file, so use 3.12.10. No other Python package is required to produce or validate the submission.
-kloppy and the starter notebooks are optional and are not used by the runner.
-
-To record the exact environment of a release run:
-
-```powershell
-python --version
-python -m pip freeze
-```
-
-## Pipeline
-
-1. **M3** (`starter/tactical_tracking.py`) streams the tactical tracking once.
-2. Each unchanged observation goes to **M1** (`module1/control_scores.py`, `score_frame`) and to
-   any other evidence producer in the `PRODUCERS` list. M4's stoppage/restart evidence plugs in
-   there.
-3. M1's evidence is kept as full-precision arrays (not rounded CSV): `score_home`, `score_away`,
-   `d_home`, `d_away`, `ball_visible`, `home_available`, `away_available`.
-4. The runner checks that observation `i` carries frame `i`, and validates the evidence before
-   decoding: lengths, boolean flags, finite scores in [0, 1], valid distances, and no availability
-   without a visible ball.
-5. A decoder turns the arrays into labels, half by half, using `half_video_blocks` from
-   `games.py` (1st half 11185-90651, 2nd half 110808-190197, inclusive). State starts fresh in
-   each half.
-6. Every frame is written: `H` / `A` / `D` inside the halves, `X` outside them.
-
-Frame count, frame rate, paths and half blocks all come from `games.py`; nothing is hard-coded
-in the runner.
-
-## Current decoder: fallback
-
-`decode_half` is a simple placeholder so a valid candidate exists. It will be replaced by M2's
-decoder with the same inputs. It uses only M1 evidence:
-
-- A score comparison is considered only when **both** `home_available` and `away_available`
-  are true. Missing evidence never creates opposing control.
-- The leading side must have score >= `MIN_SCORE` and beat the other by >= `MARGIN`.
-- A change of side needs that lead for `CONFIRM_FRAMES` consecutive frames. One nearest-player
-  flip does not switch possession.
-- Missing, weak or tied evidence keeps the current side (passes and occlusions do not end it).
-- Before the first confirmed side the label is `X` (no guess).
-- It does **not** produce `D`. Dead-ball evidence is M4's job and is not connected yet.
-
-## Configuration used
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `tau` | 3.0 m | Distance at which a proximity score falls to 1/e |
-| `MIN_SCORE` | 0.10 | Leading side must be at least this close (about 7 m at tau = 3) |
-| `MARGIN` | 0.05 | Leading side must beat the other by at least this much |
-| `CONFIRM_FRAMES` | 12 | About 0.5 s at 25 fps of consecutive control before switching |
-
-These are fixed constants chosen for plausibility. They were **not** tuned on the public ground
-truth, which is too short (17 possessions) to select parameters. Do not change them by looking
-at public-label scores.
-
-## Output and overwrite rules
-
-- Header `frame,label`, then one row per frame, frames `0..199318` in order, 199,319 data rows.
-- Encoding UTF-8 (no byte-order mark), LF line endings only, on every platform.
-- The file is first written to `<out>.tmp` and renamed to `<out>` only after the whole run
-  succeeds. A failed run never leaves a partial submission, and an existing `<out>` is replaced
-  only by a successful run.
-- Repeating the run with the same inputs, code and environment gives identical bytes.
-- On any error the runner prints `ERROR: ...` to stderr and exits with status 1.
-
-## Result of the fallback run (format check only)
-
-Run on the tactical bundle: ball visible on 113,488 of 199,319 frames. Output counts were
-`H 83,631`, `A 75,224`, `D 0`, `X 40,464` (40,462 of them are the ungraded frames outside the
-halves). The official validator accepts the file and reports 710 possessions of mean 8.9 s.
-That count is high for a real match, which is expected without stoppage evidence and without
-M2's possession memory. The validator checks format only; it says nothing about label quality.
-
-## Reproduction record (fill in for each release candidate)
-
-| Field | Value |
-|---|---|
-| Candidate commit (`git rev-parse HEAD`) | |
-| Python (`python --version`) | |
-| NumPy / pandas (`python -m pip show numpy pandas`) | |
-| Command | |
-| Validator result | |
-| SHA-256 of the CSV | |
-| Person and machine | |
-
-A release is reproduced only when a second person, on another machine, fills in the same table
-from a clean checkout of the same commit and gets the same SHA-256.
-
-## Rules
-
-No ground-truth labels are read, nothing is trained, and no label is produced or corrected by
-hand. Restricted match data and generated CSVs are not committed (`data/` is gitignored).
+The M4 loader imports M2 from this checkout; no `MTAH_M2_ROOT` or other clone is
+needed. Invented pipeline tests exercise actual M1/M4/M2, and an invented EPTS
+fixture includes the actual M3 parser through serialization. Existing M5 metric
+and supplied baseline/public-label shape checks are retained. They are format/
+metric tests, not training, tuning, version selection or accuracy acceptance.
+Current execution evidence is in [INTEGRATION_STATUS.md](../docs/INTEGRATION_STATUS.md).
