@@ -167,7 +167,7 @@ class EvidenceTests(unittest.TestCase):
         rows = [producer(i, observation(i, x=-.3 if i == 10 else 30)) for i in range(25)]
         self.assertTrue(all(row["dead_score"] == 0 for row in rows))
 
-    def test_restart_requires_in_pitch_displacement_and_recent_pause(self):
+    def test_restart_requires_in_pitch_displacement_and_supported_pause(self):
         for x in (-1.5, -.3, .1):
             producer = self.producer()
             self.paused(producer)
@@ -207,13 +207,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(row["dead_available"])
         self.assertFalse(row["restart_available"])
 
-    def test_context_expiry_and_bounded_history(self):
-        # The pause context now lives pause_context_s (30 s), not 3 s. See test_stoppage_resume.py.
+    def test_eligibility_survives_gaps_with_bounded_history(self):
         producer = self.producer(halves=((1, 0, 1999),))
         self.paused(producer)
         for i in range(16, 800):                      # ball missing for about 31 s
             producer(i, observation(i, x=None))
-        self.assertIsNone(producer.context)
+        self.assertIsNotNone(producer.context)
         row = producer(800, observation(800, x=5, speeds=(3, 3, 3)))
         self.assertEqual(row["restart_score"], 0)
         for i in range(801, 900):

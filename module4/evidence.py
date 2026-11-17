@@ -28,7 +28,6 @@ class EvidenceConfig:
     player_active_mps: float = 2.0
     collective_fraction: float = 2 / 3
     pause_s: float = 0.40
-    pause_context_s: float = 30.0
     restart_ball_mps: float = 2.0
     restart_displacement_m: float = 0.8
     boundary_dead_weight: float = 0.65
@@ -40,9 +39,10 @@ class EvidenceConfig:
     ball_restart_weight: float = 0.60
     restart_ball_displacement_m: float = 2.0
     restart_ball_sustain_s: float = 0.20
+    restart_progress_m: float = 0.50
     restart_consume_s: float = 1.0
+    restart_report_samples: int = 3
     weak_dead_cap: float = 0.30
-    still_strong_s: float = 2.0
     exit_memory_s: float = 2.0
     min_out_samples: int = 3
     max_ball_mps: float = 80.0
@@ -51,7 +51,7 @@ class EvidenceConfig:
         for name, value in asdict(self).items():
             if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(name + " must be finite and positive")
-        for name in ("min_nearby_players", "min_out_samples"):
+        for name in ("min_nearby_players", "min_out_samples", "restart_report_samples"):
             if not isinstance(getattr(self, name), int):
                 raise ValueError(name + " must be an integer")
         for name in ("collective_fraction", "pause_anchor_score", "weak_dead_cap"):
@@ -125,13 +125,17 @@ class StoppageEvidence:
         self.pause_since = None
         self.out_run = 0
         self.move_since = None
+        self.move_origin = None
+        self.report_since = None
+        self.report_run = 0
 
     def _clear_motion(self):
         """Everything, used at a half boundary."""
         self._clear_ball_motion()
         self.last_out_t = None
-        # Long-term pause context: dict(last_t, x, y, restart_t). Evidence memory, not a D state.
-        # It lives apart from the 0.2 s ball history so a late restart can still be recognised.
+        # One fixed-size same-half eligibility record, not a D state or live team.
+        # Age cannot erase an as-yet-unreported supported pause. Fresh motion is
+        # rebuilt independently; a confirmed output burst consumes this record.
         self.context = None
 
     def __call__(self, index, observation):
@@ -162,16 +166,21 @@ class StoppageEvidence:
             result["restart_side"] = active_sides[0]
         c = self.config
 
-        # LONG memory: the pause context only expires when it has gone unsupported for
-        # pause_context_s. A missing ball does not refresh it, and it is NOT the 0.2 s history.
-        if self.context is not None and t - self.context["last_t"] > c.pause_context_s:
+        # Retirement is tied to an actually reported burst, never pause age or
+        # absence. Once qualified, its report window closes even during missing data.
+        if (self.context is not None and self.context["restart_t"] is not None
+                and t - self.context["restart_t"] + 1e-9 >= c.restart_consume_s):
             self.context = None
+            self.move_since = self.move_origin = self.report_since = None
+            self.report_run = 0
 
         ball = _position(observation.get("ball"))
         if ball is None:
             self.pause_since = None
             self.out_run = 0
             self.move_since = None
+            self.move_origin = self.report_since = None
+            self.report_run = 0
             return result  # no positive evidence from disappearance or tag alone
 
         # SHORT memory: ball history. A gap or an impossible jump starts it over.
@@ -186,11 +195,15 @@ class StoppageEvidence:
             self.history.popleft()
         dt = t - self.history[0][0]
         ball_speed = None
+        progress_speed = None
         if len(self.history) >= 2 and dt + 1e-9 >= c.min_motion_s:
             # Observed path length / elapsed seconds, including short missing gaps.
             # No invented sample, and a long gap starts a new motion history.
             ball_speed = sum(math.hypot(b[1] - a[1], b[2] - a[2])
                              for a, b in zip(self.history, list(self.history)[1:])) / dt
+            # Restart movement needs spatial progress, not distance accumulated
+            # by bouncing around a small region. Keep path speed for pause checks.
+            progress_speed = math.dist(ball, self.history[0][1:]) / dt
 
         x, y = ball
         edge = min(x, self.pitch[0] - x, y, self.pitch[1] - y)
@@ -226,8 +239,7 @@ class StoppageEvidence:
                     score = (c.boundary_dead_weight * boundary + c.tag_dead_weight * tagged) * slow
                     # Near the line and slow is also what some live play looks like. Strong
                     # evidence needs one more independent clue; otherwise the score is capped.
-                    corroborated = (tagged or exit_seen
-                                    or t - self.pause_since + 1e-9 >= c.still_strong_s)
+                    corroborated = tagged or exit_seen
                     if boundary > 0 and not corroborated:
                         score = min(score, c.weak_dead_cap)
                     result["dead_score"] = score
@@ -238,7 +250,7 @@ class StoppageEvidence:
         else:
             self.pause_since = None
 
-        # ---- restart evidence (needs ball motion and a recent pause context) ----
+        # ---- restart evidence (fresh motion plus unconsumed same-half eligibility) ----
         context = self.context
         if context is None or ball_speed is None:
             self.move_since = None
@@ -246,7 +258,7 @@ class StoppageEvidence:
         result["restart_available"] = True
         inside = edge >= 0
         away = math.dist(ball, (context["x"], context["y"]))
-        fast = inside and ball_speed >= c.restart_ball_mps
+        fast = inside and progress_speed >= c.restart_ball_mps
 
         # Path A: the ball leaves AND most nearby players are running again.
         score_a = 0.0
@@ -259,18 +271,27 @@ class StoppageEvidence:
         if fast and away >= c.restart_ball_displacement_m:
             if self.move_since is None:
                 self.move_since = t
+                self.move_origin = ball
         else:
             self.move_since = None
+            self.move_origin = None
         score_b = 0.0
-        if self.move_since is not None and t - self.move_since + 1e-9 >= c.restart_ball_sustain_s:
+        if (self.move_since is not None and t - self.move_since + 1e-9 >= c.restart_ball_sustain_s
+                and math.dist(ball, self.move_origin) >= c.restart_progress_m):
             score_b = c.ball_restart_weight + c.tag_restart_weight * tagged
 
         result["restart_score"] = max(score_a, score_b)
         if result["restart_score"] > 0:
-            if context["restart_t"] is None:
-                context["restart_t"] = t
-            elif t - context["restart_t"] + 1e-9 >= c.restart_consume_s:
-                self.context = None  # the restart has been reported; forget the pause
+            if self.report_since is None:
+                self.report_since = t
+            self.report_run += 1
+            # An interrupted sub-confirmation pulse must not spend eligibility.
+            # Three consecutive outputs match the corrected default M2 receiver.
+            if self.report_run >= c.restart_report_samples and context["restart_t"] is None:
+                context["restart_t"] = self.report_since
+        else:
+            self.report_run = 0
+            self.report_since = None
         return result
 
 

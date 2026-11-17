@@ -1,18 +1,18 @@
 """M4 tests for restarts, late returns, weak signals, sparse data and tracking jumps.
 
-Invented plays only. No match data, no labels. TinyDecoder below is a TEST helper that shows
-how a consumer can enter and leave D from the real M4 outputs; it is not Module 2's decoder.
+Invented plays only. All consumer assertions use actual M1 score_frame and actual
+corrected M2, selected explicitly via MTAH_M2_ROOT. No alternate decoder is used.
 """
 
-from dataclasses import replace
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
+from module1.control_scores import score_frame
 from module4 import evidence as m4
+from m2_dependency import load_m2
 from test_stoppage_evidence import observation, window
-
-STRONG = 0.5  # the pause_anchor_score; the level at which M4's own evidence counts as strong
-
 
 def make(windows=(), config=None, last_frame=2999):
     with patch.object(m4, "half_video_blocks", return_value=((1, 0, last_frame),)):
@@ -29,18 +29,18 @@ def play(producer, frames):
     return rows
 
 
-class TinyDecoder:
-    """Enter D on STRONG dead evidence; stay in D through missing data; leave on STRONG restart."""
-
-    def run(self, rows):
-        in_d, out = False, []
-        for row in rows:
-            if not in_d and row["dead_available"] and row["dead_score"] >= STRONG:
-                in_d = True
-            elif in_d and row["restart_available"] and row["restart_score"] >= STRONG:
-                in_d = False
-            out.append(in_d)
-        return out
+def actual_states(m2, frames, windows=()):
+    """Collect actual producer returns; map actual M2 labels to D flags for assertions."""
+    rows = play(make(windows), frames)
+    for i, frame in enumerate(frames):
+        obs = observation(i, x=frame[0], speeds=frame[1], y=frame[2] if len(frame) > 2 else 34.)
+        scores = score_frame(obs)
+        rows[i].update({name: scores[name] for name in
+                        ("score_home", "score_away", "ball_visible", "home_available", "away_available")})
+    arrays = {name: np.array([row[name] for row in rows], dtype=object if name == "restart_side" else None)
+              for name in rows[0]}
+    labels = m2.modulo2(**arrays, half_blocks=[(1, 0, len(rows) - 1)])
+    return [label == "D" for label in labels]
 
 
 STILL = (0, 0, 0)
@@ -87,13 +87,10 @@ class ResumeTests(unittest.TestCase):
         rows = play(producer, throw_in(missing=250))     # ball lost about 10 s
         self.assertGreaterEqual(max(r["restart_score"] for r in rows[300:]), 0.6)
 
-    def test_context_expires_only_after_pause_context_s(self):
+    def test_same_half_eligibility_is_not_an_expiring_timeout(self):
         producer = make()
-        rows = play(producer, throw_in(missing=1000))    # about 40 s, longer than 30 s
-        self.assertTrue(all(r["restart_score"] == 0 for r in rows[1100:]))
-        short = replace(m4.EvidenceConfig(), pause_context_s=3.0)
-        rows = play(make(config=short), throw_in(missing=250))
-        self.assertTrue(all(r["restart_score"] == 0 for r in rows[300:]))
+        rows = play(producer, throw_in(missing=1000))    # about 40 s; no age expiry
+        self.assertGreaterEqual(max(r["restart_score"] for r in rows[1000:]), 0.6)
 
     def test_context_is_separate_from_the_short_history(self):
         producer = make()
@@ -114,9 +111,13 @@ class ResumeTests(unittest.TestCase):
 
 
 class WeakSignalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m2 = load_m2()
+
     def max_dead(self, frames, windows=()):
         rows = play(make(windows), frames)
-        return max(r["dead_score"] for r in rows), TinyDecoder().run(rows)
+        return max(r["dead_score"] for r in rows), actual_states(self.m2, frames, windows)
 
     def test_slow_play_near_the_line_stays_weak(self):
         # ball 0.2 m inside the line, creeping 0.5 m/s along it, players walking, no tag, 1.6 s
@@ -126,11 +127,11 @@ class WeakSignalTests(unittest.TestCase):
         self.assertLessEqual(top, 0.30 + 1e-9)
         self.assertFalse(any(in_d))
 
-    def test_long_stillness_near_the_line_becomes_strong(self):
+    def test_long_slow_live_play_near_the_line_stays_weak(self):
         frames = [(0.2, (1.0, 1.0, 1.0), 20 + 0.02 * i) for i in range(75)]   # 3 s
         top, in_d = self.max_dead(frames)
-        self.assertGreaterEqual(top, 0.5)
-        self.assertTrue(in_d[-1])
+        self.assertLessEqual(top, 0.30)
+        self.assertFalse(any(in_d))
 
     def test_weak_signals_never_enter_d(self):
         cases = {
@@ -152,7 +153,7 @@ class WeakSignalTests(unittest.TestCase):
         self.assertFalse(any(in_d))
         rows = play(make([window("H", 0, 100)]), [(None, STILL)] * 30)
         self.assertEqual(rows[5]["restart_side"], "H")
-        self.assertFalse(any(TinyDecoder().run(rows)))
+        self.assertFalse(any(actual_states(self.m2, [(None, STILL)] * 30, [window("H", 0, 100)])))
 
     def test_tag_with_ball_near_the_line_counts_as_corroborated(self):
         frames = [(0.2, (1.0, 1.0, 1.0), 20 + 0.02 * i) for i in range(40)]
@@ -230,9 +231,12 @@ class TrackingJumpTests(unittest.TestCase):
 
 
 class EnterAndLeaveDTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m2 = load_m2()
+
     def labels(self, frames, windows=()):
-        rows = play(make(windows), frames)
-        return TinyDecoder().run(rows)
+        return actual_states(self.m2, frames, windows)
 
     def test_throw_in_with_late_return_enters_and_leaves_d(self):
         frames = throw_in(missing=250, wait=10, players=STILL)
@@ -268,7 +272,8 @@ class ConfigTests(unittest.TestCase):
     def test_new_settings_are_validated(self):
         for values in ({"weak_dead_cap": 0.5}, {"min_out_samples": 2.5},
                        {"restart_ball_displacement_m": 0.5}, {"ball_restart_weight": 0.95},
-                       {"max_ball_mps": 0}, {"pause_context_s": -1}):
+                       {"max_ball_mps": 0}, {"restart_report_samples": 2.5},
+                       {"restart_progress_m": 0}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 m4.EvidenceConfig(**values)
 

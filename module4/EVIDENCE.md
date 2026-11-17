@@ -1,186 +1,255 @@
-# M4 tracking evidence
+# M4 tracking evidence contract
 
-Implemented November 16, 2026. This component supplies uncertain evidence to M2.
-It produces no H/A/D/X decisions and stores no possession or persistent dead state.
-`restart_windows(events)` and its team mapping remain unchanged in `stoppages.py`.
-Windows are approximate, half-open `[start_frame, end_frame)` context.
+Updated November 17, 2026 for F2/F3/F5/F6. This component returns uncertain
+evidence, never possession labels or referee decisions. M2 owns persistent D and
+H/A/X transitions. M1 runner transport remains external work.
 
-## APIs
+## APIs and outputs
 
 ```python
 from module4.evidence import StoppageEvidence, iter_stoppage_evidence, build_evidence
 from module4.stoppages import restart_windows
 from starter.load_smart_tagging import load
 
-(local)
-bundle = "C:/Users/oamu2/more-than-a-hack-2027/data"
 producer = StoppageEvidence(restart_windows(load(data_dir=bundle)))
-# Inside the existing single M3 loop, passing the same read-only dictionary as M1:
-# result = producer(index, observation)
-
-for row in iter_stoppage_evidence(data_dir=bundle):
-    pass  # frame plus five scalar fields; exhaust to validate the complete source
-
-arrays = build_evidence(data_dir=bundle)  # five full-length aligned NumPy arrays
+result = producer(index, observation)  # inside the existing single M3 loop
+rows = iter_stoppage_evidence(data_dir=bundle)  # standalone component tool
+arrays = build_evidence(data_dir=bundle)        # five aligned NumPy arrays
 ```
 
-The **one callable signature is `producer(index, observation) -> mapping`**.
-Construct a fresh `StoppageEvidence(windows=(), *, game=GAME, config=None)` per
-match. It owns bounded ball history, a pause timer and one recent pause anchor.
-`reset()` clears all of these and frame-order validation. Calls must be contiguous,
-with `index == observation['frame']` and `time_s == index / games.py fps`. A first
-call can start within a half, with fresh history. Each result is independent.
+The per-frame signature is **`producer(index, observation) -> mapping`**.
+Construct `StoppageEvidence(windows=(), *, game=GAME, config=None)` per match.
+Inputs are read-only corrected M3 dictionaries: metre positions, already-converted
+`speed_mps`, explicit missing values, export slots rather than persistent people.
+Calls are contiguous, with integer `index == frame` and `time_s == index/fps`.
+The first call may start within a half with fresh state. `reset()` clears all
+state, including order validation. Returned dictionaries are independent.
 
-Both wrappers accept keyword-only `game=GAME, data_dir=None, config=None,
-windows=None`. `None` windows loads automatic tags with the starter loader; `()`
-disables tag context. Streaming adds `frame`; array indices themselves are frames.
-Arrays contain float64 scores, Boolean availability and object H/A/None sides.
-No rounding or frame dictionaries are retained. Closing the stream closes M3.
-The scalar producer and streaming checker use only the standard library;
-`build_evidence` requires the existing NumPy dependency.
+Wrappers accept keyword-only `game=GAME, data_dir=None, config=None, windows=None`.
+`None` windows loads automatic tags; `()` disables them. The iterator adds `frame`
+and retains every tactical frame; exhaust it for final source/count validation.
+Closing it closes M3. Arrays have float64 scores, Boolean availability and object
+H/A/None sides. Scalars/streaming require the standard library; arrays/tests use
+NumPy. Do not add the standalone wrappers as extra tracking scans in M1's runner.
 
 | Field | Meaning |
 |---|---|
-| `dead_score` | Finite [0,1] support for a stoppage; default 0 |
-| `dead_available` | Current ball motion and enough current nearby player positions/speeds can be evaluated |
-| `restart_score` | Finite [0,1] support for resumed play following a recent supported pause; default 0 |
-| `restart_available` | Dead-feature observations are available and a recent same-half pause anchor exists |
-| `restart_side` | Optional current automatic-tag side; H, A or None, independently of score availability |
+| `dead_score` | Finite [0,1] support for stopping; not a probability |
+| `dead_available` | Current ball motion and enough nearby player positions/speeds can be assessed |
+| `restart_score` | Finite [0,1] support for fresh resumption after an eligible supported pause |
+| `restart_available` | Unconsumed same-half eligibility and current usable ball-motion baseline; independent of player/dead availability |
+| `restart_side` | Optional current tag side H/A/None, independently of availability |
 
 Unavailable scores are exactly zero with flag false. Available zero means the
-observations did not support that signal. A known side can accompany zero or
-unavailable restart evidence; **side alone must never release M2 from D**. Without
-an active known tag the side is None. Any unknown or conflicting overlapping tag
-also leaves it None. No team is guessed from track-slot identity or proximity.
+observations do not support that signal. Known side alone cannot release D.
+Unknown/conflicting overlapping tags yield None, including known plus unknown.
+No side is inferred from slots/motion. `restart_windows(events)` and its mapping
+are unchanged. Automatic windows remain approximate **half-open `[start,end)`**
+context; neither endpoint implies stopped/resumed play. Side disappears at end.
 
-## Features and missingness
+## Features, observation requirements and comparisons
 
-1. Use M3 `x_m/y_m` directly. Retain out-of-pitch points. Signed distance to the
-   nearest edge is `e=min(x,L-x,y,W-y)` using the pitch in `games.py`. Boundary
-   support is `b=clip((boundary_margin_m-e)/boundary_margin_m,0,1)`. A boundary
-   point supplies noisy context, never a referee decision by itself.
-2. Keep observed ball points in a 0.20 s deque. Motion is observed path length
-   divided by elapsed seconds, including short missing-sample gaps. Require at
-   least 0.08 s between the oldest/current retained points. A gap exceeding
-   0.20 s clears motion history. There is no interpolation, extrapolation or
-   supplied ball-speed assumption. The deque holds at most 7 points at 25 fps.
-3. Select current observed players within 20 m of the current ball, requiring
-   both finite position coordinates and finite nonnegative `speed_mps`. M3 has
-   already converted speed to m/s: **do not divide by 3.6 again**. At least three
-   usable slots are required. Compute fractions slow (<=1.5 m/s) and active
-   (>=2 m/s). No player positions, identities or individual trajectories are
-   remembered. Speed without position cannot select a nearby player; position
-   without speed cannot enter the movement fraction. Neither becomes zero.
-4. A pause candidate requires ball speed <=0.7 m/s, slow fraction >=2/3 and
-   boundary or active-tag context. These requirements must hold continuously
-   for 0.40 s. Missing ball/player evidence or conflicting motion resets the
-   timer. Then `dead_score=(0.65*b + 0.15*tagged)*slow_fraction`; otherwise 0.
-   A stationary interior ball without a tag gives available zero evidence.
-   A tagged interior pause alone is weak (at most 0.15).
-5. A pause score >=0.50 records the current ball as a recent pause anchor. This
-   internal evidence gate does not classify the frame or persist D. The anchor
-   expires 3 s after its last supporting observation. Missing ball emits no
-   positive evidence, even if an anchor survives. A supported restart requires
-   current ball inside/on the pitch, ball speed >=2 m/s, displacement >=0.8 m
-   from that anchor, and active fraction >=2/3. Then
-   `restart_score=0.80*active_fraction + 0.10*tagged`; otherwise 0.
-   Restart support may occur anywhere inside a window or without a window, and
-   can repeat while the anchor remains recent. Neither endpoint causes it.
+1. **Ball motion.** Use metre coordinates directly, retaining outside positions.
+   The short deque retains 0.20 s and at most 7 observed points at 25 fps. Motion
+   requires at least two samples spanning >=0.08 s. Path speed is summed observed
+   path length / elapsed seconds; restart progress speed is net displacement from
+   the oldest retained point / those same seconds. Short missing gaps count in
+   elapsed time; there is no interpolation. A gap >0.20 s or intersample speed
+   >80 m/s clears short history and movement/report candidates, not unreported
+   eligibility. A missing current ball returns unavailable zero scores and clears
+   continuous pause/movement/report candidates. Jump rejection alone cannot
+   reject small oscillation with high cumulative path speed.
+2. **Players.** Select current finite observed positions and finite nonnegative
+   speeds within <=20 m of the current ball. At least three usable slots enable
+   dead evidence and the player-backed restart fraction. Slow means <=1.5 m/s;
+   active means >=2 m/s. Fractions use current usable slots only. Missing position
+   or speed is not zero; M3 speeds must not be converted again. No player history
+   or identity is inferred.
+3. **Dead evidence.** Let signed edge distance be `e=min(x,L-x,y,W-y)`, dimensions
+   from games.py, and `b=clip((1.5-e)/1.5,0,1)`. Require path speed <=0.7 m/s,
+   slow fraction >=2/3 and boundary (`b>0`) or tag context continuously for >=0.40 s.
+   Raw support is `(0.65*b + 0.15*tagged)*slow_fraction`. Boundary support is
+   capped at 0.30 unless corroborated by a current automatic tag or recent exit:
+   >=3 consecutive samples on/outside the line (`e<=0`), most recent within <=2 s.
+   **Elapsed slow play never removes this cap.** Unsupported live drift or hold
+   0.2 m inside the line stays weak regardless of duration. Tagged centre-pitch
+   pause is at most 0.15; tag-only missing ball is unavailable.
+4. **Eligibility.** Dead support >=0.50 stores/refreshes one fixed-size record
+   containing the supported ball point, last support time and report status.
+   Unreported eligibility survives any same-half gap. There is no age timeout
+   and no saved live team. Age, missingness, old displacement and tag endpoints
+   cannot themselves emit restart support: short motion must be rebuilt.
+5. **Restart A, ball plus players.** Require on/in-pitch ball (`e>=0`), net progress
+   speed >=2 m/s, displacement >=0.8 m from the supported pause, enough usable
+   nearby players and active fraction >=2/3. Score is
+   `0.80*active_fraction + 0.10*tagged`.
+6. **Restart B, ball only.** Require on/in-pitch ball, net progress speed >=2 m/s,
+   displacement >=2 m from the pause, and continuous qualifying observations for
+   >=0.20 s. Also require >=0.50 m fresh net progress from that candidate's first
+   point. This rejects local jitter around a distant reacquired position: path
+   length and old-pause displacement alone are insufficient. Score is
+   `0.60 + 0.10*tagged`. Players may be stationary, sparse, absent or missing
+   positions/speeds. The returned score is the maximum of A/B. Both require
+   eligibility and current observed motion.
+7. **Consumption.** Three consecutive positive outputs qualify a report burst;
+   its first output time starts a one-second report window. At age >=1 s,
+   eligibility is consumed before processing that frame, even during missing
+   ball. Later motion cannot repeatedly reuse the old pause. An interrupted
+   burst shorter than three resets its pending report run without spending
+   eligibility, allowing later adequately observed recovery. This is aligned
+   with default corrected M2 confirmation, not feedback about its labels.
 
-All evidence/history clears when entering a new inclusive `half_video_blocks(game)`
-block, including adjacent blocks. Every outside-half frame remains in the stream
-with unavailable zero scores and None side; no history accumulates there. All
-199,319 tactical frames are retained. No corrected-tracking offset is applied.
+All history, eligibility, exit clues and counters reset on entering each inclusive
+games.py half block, including adjacent blocks. Outside-half frames remain with
+unavailable zeros/None and accumulate no history. All 199,319 tactical frames
+are retained; no corrected-tracking offset is applied to M3 indices.
 
-## Configuration and rationale
+## Complete immutable configuration
 
-`EvidenceConfig` is immutable; pass a replacement instance to the producer or
-wrappers. Units and complete defaults follow. Invalid/nonfinite/nonpositive
-values, contradictory speed gates and weights summing above one are rejected.
+Comparisons are defined above; time comparisons use 1e-9 s floating tolerance.
+Nonfinite/nonpositive values, noninteger counts, contradictory speed gates,
+weak cap >= anchor score and invalid weight sums are rejected.
 
-| Settings | Default | Rationale |
+| Settings | Defaults | Rationale |
 |---|---|---|
-| `boundary_margin_m` | 1.5 m | Soft edge region for tracking noise |
-| `nearby_radius_m`, `min_nearby_players` | 20 m, 3 slots | Local collective context, rather than one player |
-| `motion_window_s`, `min_motion_s`, `max_ball_gap_s` | 0.20, 0.08, 0.20 s | Short observed motion baseline; refuse long occlusions |
-| `ball_slow_mps`, `player_slow_mps` | 0.7, 1.5 m/s | Low ball motion and approximately walking players |
-| `player_active_mps`, `collective_fraction` | 2 m/s, 2/3 | Require collective renewed movement |
-| `pause_s`, `restart_memory_s` | 0.40, 3.0 s | Reject isolated noise; bound pause-to-restart memory |
-| `restart_ball_mps`, `restart_displacement_m` | 2 m/s, 0.8 m | Require motion and meaningful observed displacement |
-| `boundary_dead_weight`, `tag_dead_weight` | 0.65, 0.15 | Boundary dominates; automatic tags add modest support |
-| `pause_anchor_score` | 0.50 | Weak interior tag context cannot seed a restart anchor |
-| `movement_restart_weight`, `tag_restart_weight` | 0.80, 0.10 | Observed resumption dominates tag context |
+| `boundary_margin_m` | 1.5 m | Soft noisy edge region |
+| `nearby_radius_m`, `min_nearby_players` | 20 m, 3 | Current collective context |
+| `motion_window_s`, `min_motion_s`, `max_ball_gap_s` | 0.20, 0.08, 0.20 s | Observed baseline; refuse long-gap velocity |
+| `max_ball_mps` | 80 m/s | Reject implausible intersample jumps |
+| `ball_slow_mps`, `player_slow_mps` | 0.7, 1.5 m/s | Low ball motion / walking players |
+| `player_active_mps`, `collective_fraction` | 2 m/s, 2/3 | Collective path A activity |
+| `pause_s` | 0.40 s | Reject isolated pause noise |
+| `exit_memory_s`, `min_out_samples` | 2 s, 3 | Repeated recent outside/on-line observations |
+| `weak_dead_cap`, `pause_anchor_score` | 0.30, 0.50 | Weak boundary clues cannot seed eligibility |
+| `boundary_dead_weight`, `tag_dead_weight` | 0.65, 0.15 | Geometry plus modest tag support |
+| `restart_ball_mps`, `restart_displacement_m` | 2 m/s, 0.8 m | Path A motion/displacement |
+| `restart_ball_displacement_m`, `restart_ball_sustain_s` | 2 m, 0.20 s | Stronger ball-only requirements |
+| `restart_progress_m` | 0.50 m | Fresh progress exceeding the tested 0.2 m jitter region |
+| `movement_restart_weight`, `ball_restart_weight`, `tag_restart_weight` | 0.80, 0.60, 0.10 | Player / ball-only support plus tag context |
+| `restart_consume_s`, `restart_report_samples` | 1 s, 3 | Bounded report compatible with default M2 |
 
-These are plausibility choices exercised on invented fixtures, not learned or
-calibrated probabilities. Full-stream checks validate mechanical invariants only.
-No public ground truth, human labels or other-match labels were used to select
-parameters. Maximum default scores are 0.80 dead and 0.90 restart. M2 must choose
-and test its own acceptance, persistence and conflict policy.
+`pause_context_s` and `still_strong_s` were removed: age expiry and elapsed
+stillness are not admission rules. Historical `restart_memory_s` is not a current
+setting. Defaults are heuristics justified with invented cases, not learned or
+calibrated probabilities. No public labels, desired match counts or parameter
+sweeps were used. Changing consumer thresholds/counts requires joint validation.
 
-## Verification and invented examples
+## Corrected M2 and reproducible required gate
 
-Run from the isolated checkout with a working Python and NumPy for the tests:
+The actual corrected dependency is `d1500582493069cbd9a7b74c86cd217fb279772c`.
+Its exact selected-field call uses native inclusive half triples:
+
+```python
+labels = modulo2(
+    **{k: m1[k] for k in ("score_home", "score_away", "ball_visible", "home_available", "away_available")},
+    **{k: m4[k] for k in ("dead_score", "dead_available", "restart_score", "restart_available", "restart_side")},
+    half_blocks=half_video_blocks(GAME),
+)
+```
+
+Default M2 confirms dead/restart after three consecutive available samples >=0.50,
+labeling the confirmation frame. D persists until supported restart. A unique
+known side establishes H/A; unknown/conflict releases to X until control confirms.
+Its control gates are score >=0.10, margin >0.05, 12 samples; simultaneous strong
+evidence defaults to dead priority. Weak scores/side alone are not decisive.
+Do not lower M2's D threshold to admit unsupported M4 categories.
+
+From M4's root select the dependency explicitly; a clean separate checkout of
+the same pinned commit is equally valid:
 
 ```powershell
-$python = 'C:/Users/oamu2/more-than-a-hack-2027/data/_review_20261113/env/Scripts/python.exe'
-$bundle = 'C:/Users/oamu2/more-than-a-hack-2027/data'
-& $python -m unittest discover -s tests -v
-& $python module1/control_scores.py --test
-& $python module4/test_stoppages.py
-& $python -m module4.evidence --data-dir $bundle
+$env:MTAH_M2_ROOT = (Resolve-Path ../m2-execution).Path
+python -B -m unittest discover -s tests -v
+python -B -m unittest discover -s tests -p test_stoppage_m2_gate.py -v
+python -B module4/test_stoppages.py
+python -B module1/control_scores.py --test
+python -B -m module4.evidence --data-dir C:/path/to/licensed-bundle
 git diff --check
 ```
 
-For M4 only: `python -m unittest discover -s tests -p test_stoppage_evidence.py -v`.
-The full checker exhausts actual M3 dictionaries and validates count, exact order,
-finite bounded scores, Boolean availability, unavailable zeros and legal sides.
-It prints aggregate counts/ranges/configuration only, without writing frame data.
-The absolute interpreter above is the verified local environment, not a portable
-installation requirement or proof of the M1 release pins.
+The gate verifies HEAD and clean decoder against the pinned SHA, loads actual M2
+read-only, prints source/hash provenance, feeds actual M1 `score_frame` and actual
+M4 outputs, and calls shipped M2 configuration. **No TinyDecoder, duplicate state
+logic or silent skip.** Unset/wrong dependencies fail; ordinary discovery includes
+this gate. Compact invented arrays rebase half triples; M4 receives native frame
+IDs, except explicitly named compact adjacent-half overrides.
 
-Invented tests put a ball at (-0.3,34) m with three slow nearby players. After
-the motion baseline and pause duration, a known-side tag yields dead score 0.80.
-The ball then moves to (2,34) m with three players at 3 m/s: restart score 0.90,
-even though the window has not ended. Without a tag, scores are 0.65 and 0.80
-and side remains None. A passing ball with brief occlusion yields no positive
-dead signal; a stationary centre-pitch ball without context also yields zero.
-Tests additionally cover unknown/conflicting tags, exact endpoints, missingness,
-unit-correct real M3 parsing of invented files, elapsed time across missing samples,
-fresh halves, bounded history, nonmutation, order errors and a simple return-value
-consumer. Existing standalone tag assertions are retained unchanged.
+The full checker exhausts actual M3 -> M4 and prints aggregate counts/ranges/config
+only. It validates order/count, Boolean flags, finite bounds, unavailable zeros
+and legal sides. Current results/Git state are in `FIX_HANDOFF.md`; ignored
+historical `HANDOFF.md` is obsolete.
 
-## Required M1/M2 handoff — not implemented here
+## Supported envelope and adoption decision
 
-M1's current `collect_evidence` calls `producer(index, observation)` but discards
-the returned mapping; its comment describes a different one-argument signature.
-Registering this producer alone does **not** integrate it. M1 source is unchanged.
+Controls cover supported outside pauses and genuine observed movement after
+32/60/120-second gaps with active/stationary/sparse/absent players or missing
+positions/speeds. Inadequate/intermittent observations retain uncertainty/D.
+Unsupported in-pitch drift/hold stays weak at 3, 10 and 30 s. Specified reacquired
+jitter, outside retrieval, slow retrieval and isolated jump-return remain
+non-decisive in actual M2. Consumption and interrupted pulses are covered.
 
-M1 must construct the instance with loaded windows, feed each unchanged M3
-observation to M1 and M4 in its existing single loop, collect all five returned
-fields into aligned full-precision arrays, validate lengths/types/ranges/sides and
-zero-on-unavailable, and explicitly pass the mapping to actual M2. Avoid a second
-tracking scan in the runner: the wrappers above are standalone component tools.
-Add a test proving these actual returned fields reach the decoder. No global
-state or side-effect transport is necessary.
+**Unresolved ambiguity:** 3 m/s in-pitch retrieval can satisfy ball-only motion
+and release D. A maintained ambiguity fixture records this accepted-by-code
+behavior; it is not a negative-control pass or proof of resumed play. Preserving
+genuine ball-only restarts accepts this observational overlap. The M3 owner's
+integration-adoption decision below accepts this limitation for the stated scope;
+it does not establish that a particular movement is referee-authorized play.
+Persistent outside sensor bias or wrong tags can falsely support D.
 
-M2 must consume those five arrays alongside M1 control evidence and availability,
-and the required half mask from `games.py`. Its fourth argument should become
-documented stoppage evidence rather than exact restart windows, as proposed in
-the integration plan. M2 owns H/A/D/X, confirming/retaining D through unavailable
-evidence, supported restart exit, control persistence, half reset and conflicts.
-Neither a positive weak score nor a known restart side is an automatic decision.
-The current M1 fallback and old M2 signature are not this accepted consumer;
-actual M1 transport and M2 behavioral acceptance remain proposed work.
+Interior fouls/offside without boundary support remain poorly covered; weak tagged
+interior pauses cannot enter default D. Unreported eligibility can persist the
+whole half, so fresh unrelated motion after an ambiguous prior stop remains a
+risk. Curved/reversing genuine motion may fail progress gates. Missing samples
+are never filled; sparse pulses may fail M2 confirmation. Duplicate/incomplete
+slots limit collective inference. No match accuracy, independent reproduction
+or full-pipeline readiness is claimed. M1 must still collect/validate these five
+returns in its single M3 loop and call actual M2; its reviewed transport is unchanged.
 
-## Limited coverage
+### Integration-adoption decision — November 17, 2026
 
-Interior fouls, offside, referee delays, goals and distant-player restarts often
-cannot be confidently inferred. Sparse players/speeds and long ball occlusions
-cause abstention. A restart more than 3 s after the last observed supported pause
-is deliberately unsupported. Motion may reflect tracking noise, retrieval,
-warmup or a moving dead ball; slow live play near an edge can resemble a pause.
-The collective sample can include duplicate export slots and incomplete teams;
-it does not prove how every player moves. Observed paths underestimate unobserved
-motion and can be distorted by tracking errors. No exact whistle time, exhaustive
-stoppage coverage, possession quality, independent release reproduction or
-completed pipeline is claimed.
+**Decision owner: M3 owner. Decision: accept the current restricted M4 operating
+envelope for integration, retain the tested defaults, and keep final release
+approval conditional on the remaining integration and reproduction gates.**
+This records the M3 owner's decision communicated in the review conversation.
+
+Candidate: branch `module4-stoppage-restarts`, base HEAD
+`1c578db49a830e2c43dc866d611b65761a3b90a5`, with the reviewed **uncommitted**
+producer SHA-256
+`616f0be6cdb9376a2c9f43d141f4978cee1db0a2a09b1532d5b9ab2582d356f7`.
+The fixes are not in that HEAD. Record the resulting commit SHA in the combined
+integration/release record when these exact changes are committed. Consumer:
+actual corrected M2 at `d1500582493069cbd9a7b74c86cd217fb279772c`.
+
+- **Keep ball-only restarts enabled.** Accept that qualifying fast in-pitch
+  retrieval can release D incorrectly. This preserves the tested recovery path
+  with stationary, sparse or absent players; its real-match error frequency is
+  unverified.
+- **Keep unreported eligibility until the half ends.** Accept that fresh unrelated
+  movement after an ambiguous earlier supported pause can qualify as a restart.
+  This preserves recovery after long observation gaps. Qualified report
+  consumption, new-stop requirements after consumption and half resets remain
+  unchanged; time, disappearance or tag endpoints alone never release D.
+- **Keep the tested producer and default M2 policies unchanged.** This includes
+  three consecutive available dead/restart samples >=0.50, confirmation-frame
+  labeling, initial/unknown-restart X, trusted unique known-side restart,
+  dead-first conflict priority, and score >=0.10 / margin >0.05 / 12 consecutive
+  samples for proximity-based control. These are adopted integration heuristics,
+  with the other coverage limitations above retained.
+
+Rationale: the present rules repair reproduced delayed/sparse recovery and
+live-play/jitter failures while exposing the remaining observational overlap.
+This is acceptance of a limited engineering scope, not a match-accuracy finding.
+No parameter changes, public-label tuning or additional detection redesign are
+authorized or required by this decision.
+
+**Release conditions still pending:** prove that actual M1 transport collects and
+validates all five M4 returns and invokes actual M2; pass actual combined
+producer/transport/decoder acceptance and M5's validation/reproduction gates,
+including independent regeneration. Integration correctness and reproduction do
+not establish football accuracy, which remains unverified. This decision does
+not authorize a merge, publication or submission.
+
+Revisit the decision if evidence exposes another failure, the required coverage
+changes, or producer/consumer source, thresholds, confirmation counts or relevant
+input semantics change. Rerun affected behavioral gates before adopting a revised
+candidate. Documentation-only recording of this decision changes no algorithm.
