@@ -196,6 +196,51 @@ can produce D. Passing those assertions documents an ambiguity; it is not a
 negative-control success. The inherited two startup failure characterizations
 and fast in-pitch retrieval ambiguity also remain visible and unresolved.
 
+### Bounded restart-characterization follow-up (2026-11-17)
+
+Entry checkout was clean on `debug/possession-quality-20261117` at reviewed HEAD
+`2a3a89d7308bf967dd7c0354f69263a9e1e31fea`; production still matches `5ed8c7c`.
+Only tests and this record changed. Exact reviewer fixture details were unavailable
+in the checked evidence, so these are explicit reconstructions of the requested
+conditions, not claims of exact reproduction.
+
+`TaggedPauseRestartCharacterizations` uses the existing integrated `pipeline`
+fixture: actual M1/M4, transport and M2, with invented observations at **25 fps**.
+Frames 0..39 hold the ball at interior (40, 34) m. A Free Kick tag covers **[0, 40)**
+and expires at frame 40 (1.60 s), exactly when departure begins. Three continuously
+observed players remain at their initial nearby positions, with speed 0 m/s.
+The ball and both teams remain available on every frame; dead evidence is available
+from frame 2 and restart evidence from frame 25 through each fixture's end.
+Strong dwell evidence begins at 25 (1.00 s), and labels transition X -> H at 11,
+H -> D at **27 (1.08 s)**. No initial-D prior applies. After tag expiry, the
+transported tagged side is `None` and dead score is zero in all three cases.
+
+| Reconstructed resumption | Observed result |
+|---|---|
+| Short: seven 0.12 m steps at frames 40..46, totaling 0.84 m over 0.28 s at 3 m/s; then 75 observed stationary frames | Restart score stays zero; D persists through frame 121, including three seconds after the tap |
+| Slow: 100 steps of 0.04 m at frames 40..139, totaling 4 m over four seconds at 1 m/s | Restart score stays zero; D persists through frame 139 despite displacement beyond 2 m |
+| Control: 40 steps of 0.12 m at frames 40..79, sustained 3 m/s | First strong restart report at 61, score 0.60; third confirms D -> X at 63 (2.52 s); proximity confirms H at 74 |
+
+The two `test_known_failure_...` tests **pass because the limitation remains**:
+fully observed short/slow resumptions can remain latched in D after tag expiry.
+This does not establish correct restart classification. The sustained control
+shows supported movement can release the same latch with the same quiet players
+and expired tag. The false-D warnings for tagged live holds and 0.5 m/s live drift
+above remain unresolved.
+
+Using the pinned Python environment below, with both thread limits set to 1:
+new characterizations/control **3 pass (0.405 s)**, then focused pause/restart and
+integrated checks **137 pass (3.953 s)**, then the maintained suite once:
+**342 pass, no skips (19.374 s)**. Focused modules were `test_tagged_pause_quality`,
+`test_stoppage_evidence`, `test_stoppage_m2_gate`, `test_stoppage_resume`,
+`test_integrated_pipeline`, `test_kickoff_pipeline`, `test_bounded_contract` and
+`test_startup_diagnosis`. No inference, thresholds, configuration, interfaces or
+release gates changed; no candidate generation or public-label evaluation was
+performed beyond temporary invented fixtures in the maintained tests. Both review
+candidate directories and the protected prior candidate directory (18 files,
+including their records) remain byte-identical. No observed behavior contradicted
+the requested limitations; exact reviewer-fixture equivalence remains unverified.
+
 ## Validation, remaining limitations and execution
 
 Focused verification before final freeze: 22 quality tests (20 safeguards/target
@@ -211,6 +256,8 @@ Wrong, broad or late tags can still support false D or miss the beginning of a
 stop. A late tag may meet the rule only after live play has started. A low-motion
 live hold is observationally ambiguous. Continuous observation requirements miss
 sparse stops; false D can persist through gaps or an unobserved quick restart.
+Fully observed short/slow resumptions can also remain latched in D after tag expiry,
+as characterized above; continuous observations do not guarantee release.
 Unknown/conflicting restart side can add X latency. Duplicate slots and missing
 players distort collective fractions. The bounding-box diagonal is conservative
 and direction dependent. Same-phase consumption can miss a second real stop

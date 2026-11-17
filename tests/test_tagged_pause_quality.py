@@ -19,7 +19,7 @@ from module4 import evidence as m4
 import run_possession as rp
 from starter import tactical_tracking as m3
 from test_integrated_pipeline import pipeline
-from test_stoppage_m2_gate import observation
+from test_stoppage_m2_gate import FPS, observation
 from test_tactical_tracking import METADATA
 
 
@@ -224,6 +224,70 @@ class TaggedPauseQualityTests(unittest.TestCase):
                 self.assertEqual(content,('frame,label\n'+''.join(f'{i},{v}\n' for i,v in enumerate(labels))).encode())
                 hashes.append(hashlib.sha256(content).hexdigest())
             self.assertEqual(hashes[0],hashes[1])
+
+
+class TaggedPauseRestartCharacterizations(unittest.TestCase):
+    """Reconstructed invented review conditions; passing known failures retain a bug.
+
+    Exact reviewer fixtures were unavailable. At 25 fps, frames 0..39 hold the
+    ball at interior (40, 34); the Free Kick tag is [0, 40), so it expires at
+    1.60 s, exactly when departure starts. All three players stay at their
+    initial nearby positions with observed speed 0 m/s throughout. Every frame
+    has a ball and valid player observations, including after tag expiry.
+    """
+
+    def fully_observed_departure(self, departure):
+        self.assertEqual(FPS, 25)
+        frames = quiet(40) + departure
+        observations = [observation(i, **frame) for i, frame in enumerate(frames)]
+        for obs in observations:
+            for player in obs['players']:
+                player['x_m'] = 50. if player['team'] == 'A' else 40.
+        evidence, labels = pipeline(frames, [tag(end=40)], reader=iter(observations))
+        # Actual producer/consumer timing: one-second dwell, three D reports.
+        self.assertTrue(np.all(evidence['dead_score'][:25] < .5))
+        np.testing.assert_allclose(evidence['dead_score'][25:40], .8)
+        self.assertEqual(labels[:40], ['X']*11 + ['H']*16 + ['D']*13)
+        self.assertFalse(np.any(evidence['initial_dead']))
+        # Availability is retained after expiry; no missing-data explanation.
+        for field in ('ball_visible', 'home_available', 'away_available'):
+            self.assertTrue(np.all(evidence[field]))
+        self.assertTrue(np.all(evidence['dead_available'][2:]))
+        self.assertTrue(np.all(evidence['restart_available'][25:]))
+        self.assertTrue(np.all(evidence['restart_side'][:40] == 'A'))
+        self.assertTrue(all(side is None for side in evidence['restart_side'][40:]))
+        self.assertTrue(np.all(evidence['dead_score'][40:] == 0))
+        return evidence, labels
+
+    def test_known_failure_fully_observed_short_restart_remains_dead_after_tag_expiry(self):
+        # Seven 0.12 m steps from frame 39: 0.84 m in 0.28 s (3 m/s),
+        # then a three-second hold at the tapped position, without any gap.
+        tap = [dict(x=40. + .12*(i+1)) for i in range(7)]
+        self.assertAlmostEqual(tap[-1]['x'] - 40., .84)
+        evidence, labels = self.fully_observed_departure(tap + quiet(75, x=40.84))
+        self.assertTrue(np.all(evidence['restart_score'] == 0))
+        # Known semantic failure: passing means this invented resumption stays D.
+        self.assertEqual(labels[27:], ['D']*(len(labels)-27))
+
+    def test_known_failure_fully_observed_slow_restart_remains_dead_after_tag_expiry(self):
+        # Four seconds at 1 m/s: 100 observed 0.04 m steps, eventually 4 m
+        # from the pause spot. Distance alone does not release the D latch.
+        departure = [dict(x=40. + (i+1)/FPS) for i in range(100)]
+        self.assertAlmostEqual(departure[-1]['x'] - 40., 4.)
+        evidence, labels = self.fully_observed_departure(departure)
+        self.assertTrue(np.all(evidence['restart_score'] == 0))
+        self.assertEqual(labels[27:], ['D']*(len(labels)-27))  # known failure
+
+    def test_sustained_three_mps_departure_releases_dead_after_tag_expiry_control(self):
+        # Same quiet players and expired tag; 1.6 s of sustained 3 m/s ball
+        # movement supports the existing ball-only path despite no running players.
+        departure = [dict(x=40. + 3.*(i+1)/FPS) for i in range(40)]
+        evidence, labels = self.fully_observed_departure(departure)
+        self.assertTrue(np.all(evidence['restart_score'][:61] == 0))
+        np.testing.assert_allclose(evidence['restart_score'][61:64], .6)
+        self.assertEqual(labels[27:63], ['D']*36)
+        self.assertEqual(labels[63:74], ['X']*11)  # no active tagged side
+        self.assertEqual(labels[74:], ['H']*6)
 
 
 class KnownTaggedPauseLimitations(unittest.TestCase):
