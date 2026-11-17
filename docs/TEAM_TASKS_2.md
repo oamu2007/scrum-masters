@@ -1,6 +1,6 @@
 # Team tasks 2 — route to submission
 
-**Updated November 14, 2026.** Aim for a candidate on **November 15** and internal submission on **November 16**. [SUBMISSION.md](SUBMISSION.md) gives **November 17** as the official deadline, but does not give a cutoff hour or timezone. Must confirm those details with the organisers.
+**Updated November 14, 2026.** Aim for a candidate on **November 15** and internal submission on **November 16**. [SUBMISSION.md](../SUBMISSION.md) gives **November 17** as the official deadline, but does not give a cutoff hour or timezone. Must confirm those details with the organisers.
 
 The shared reader and control scoring are already working together on `integration-attempt` [NOTE: the current integration-attempt state is the constantly mentioned 18270a1]. Keep that work. The smallest remaining route is to add M4's tracking-based stoppage evidence, repair M2's possession memory, connect them through M1's runner, and have M5 independently regenerate the release file. `main` does not yet contain the module integration.
 
@@ -64,7 +64,7 @@ These commands describe future actions on the indicated branches, not instructio
 
 **Purpose.** Provide per-frame control evidence and own the command that connects all modules into the submission CSV.
 
-**Already available—retain this.** Integration's [control_scores.py](data/integration-attempt/module1/control_scores.py) and [usage guide](data/integration-attempt/module1/CONTROL_SCORES.md) provide `score_frame`, `iter_control_scores` and `build_evidence`. Distances are metres; proximity scores use `exp(-distance/tau)`. `home_available` and `away_available` say whether that side has usable ball/player evidence. Legacy entry points remain available. These are completed scoring tasks.
+**Already available—retain this.** Integration's [control_scores.py](../data/integration-attempt/module1/control_scores.py) and [usage guide](../data/integration-attempt/module1/CONTROL_SCORES.md) provide `score_frame`, `iter_control_scores` and `build_evidence`. Distances are metres; proximity scores use `exp(-distance/tau)`. `home_available` and `away_available` say whether that side has usable ball/player evidence. Legacy entry points remain available. These are completed scoring tasks.
 
 **Integrate before starting.** Fast-forward the owner branch as above. Read `module1/CONTROL_SCORES.md` there, then agree the M4 fields and M2 call together. The links above point into the local integration clone because this original checkout does not yet contain M1.
 
@@ -72,7 +72,7 @@ These commands describe future actions on the indicated branches, not instructio
 
 1. Add the runner proposed below. Stream M3 once and pass the same observation to M1 and M4 without modifying it. Store compact evidence arrays, not every tracking dictionary.
 2. Give M2 full-precision score arrays and both availability flags. Rounded evidence CSVs remain diagnostic. Do not use the legacy five-array return as the complete new decoder contract.
-3. Obtain frame count, frame rate, paths and half blocks from [games.py](games.py). Exhaust M3, check evidence lengths/types and write every frame, including X outside the halves. Respect `MTAH_DATA_DIR` and an explicit data-directory argument.
+3. Obtain frame count, frame rate, paths and half blocks from [games.py](../games.py). Exhaust M3, check evidence lengths/types and write every frame, including X outside the halves. Respect `MTAH_DATA_DIR` and an explicit data-directory argument.
 4. Make errors fail the command clearly; do not leave a partial file presented as a successful submission. Fix encoding/newline/output behavior and document configuration and overwrite rules.
 
 **Done when.** One command from the repository root produces the full CSV without ground-truth input, actual M1/M4 outputs reach M2 correctly, existing scoring tests still pass, and the official validator accepts the exact output. Proposed command to implement, **not available yet**:
@@ -109,7 +109,7 @@ Replace `<team_name>` with the registered name. The bundle directory contains `t
 
 **Purpose.** Give M1 and M4 the same trusted observations without duplicate raw-file parsing.
 
-**Already available—retain this.** [tactical_tracking.py](starter/tactical_tracking.py), [its contract](starter/TACTICAL_TRACKING.md) and [tests](tests/test_tactical_tracking.py) cover metadata slot/team mapping, channel references, normalized positions, metre conversion, supplied speeds converted from km/h to m/s where declared, strict frame order and missing observations. Participant frame ID minus one is the mapping; million-scale corrected-tracking offsets do not apply. Keep all metadata slots and all frames. `None` stays missing; a slot is not a real player identity.
+**Already available—retain this.** [tactical_tracking.py](../starter/tactical_tracking.py), [its contract](../starter/TACTICAL_TRACKING.md) and [tests](../tests/test_tactical_tracking.py) cover metadata slot/team mapping, channel references, normalized positions, metre conversion, supplied speeds converted from km/h to m/s where declared, strict frame order and missing observations. Participant frame ID minus one is the mapping; million-scale corrected-tracking offsets do not apply. Keep all metadata slots and all frames. `None` stays missing; a slot is not a real player identity.
 
 **Integrate before starting.** No new reader feature is required. Ensure both producers obtain `18270a1`; point them to `iter_tracking_frames(game=GAME, data_dir=None)` and the existing fields. M4 must not divide the already-corrected `speed_mps` by 3.6 again. Homography helpers take normalized coordinates, not metres.
 
@@ -127,7 +127,7 @@ Replace `<team_name>` with the registered name. The bundle directory contains `t
 
 **Purpose.** Supply evidence about stopping/resuming play; M2 owns the final state transition.
 
-**Already available—retain this.** `module4/stoppages.py` on its branch extracts set-piece windows and maps known club tags to H/A while preserving unknown sides as `None`. Its small `test_stoppages.py` assertions cover extraction and side mapping. Current code still has no tracking-based evidence producer. Reuse [load_smart_tagging.py](starter/load_smart_tagging.py); its `end_frame` is exclusive.
+**Already available—retain this.** `module4/stoppages.py` on its branch extracts set-piece windows and maps known club tags to H/A while preserving unknown sides as `None`. Its small `test_stoppages.py` assertions cover extraction and side mapping. Current code still has no tracking-based evidence producer. Reuse [load_smart_tagging.py](../starter/load_smart_tagging.py); its `end_frame` is exclusive.
 
 **Integrate before starting.** Merge the tested common base, use corrected M3 observations and agree this minimal per-frame contract with M2/M1. These fields are **proposed, not implemented**:
 
@@ -154,9 +154,9 @@ Provide these for every tactical frame, as scalars from a frame function or matc
 
 **Purpose.** Catch cross-module mistakes and prove another teammate can regenerate the exact release file.
 
-**Already available—retain this.** Integration has 19 M3 tests plus 17 M1 tests and the M1 self-test. M4 has a separate assertion script on its branch; it is not included in those 36 tests. [validate_submission.py](evaluation/validate_submission.py) checks the official file contract. Historical harness results are useful evidence, not a maintained acceptance suite.
+**Already available—retain this.** Integration has 19 M3 tests plus 17 M1 tests and the M1 self-test. M4 has a separate assertion script on its branch; it is not included in those 36 tests. [validate_submission.py](../evaluation/validate_submission.py) checks the official file contract. Historical harness results are useful evidence, not a maintained acceptance suite.
 
-**Integrate before starting.** Create the proposed validation branch from the tested common base when implementation work resumes. Read [CHALLENGE.md](CHALLENGE.md), [EVALUATION.md](EVALUATION.md), [SUBMISSION.md](SUBMISSION.md) and [RULES.md](RULES.md). Start tests now, alongside M2/M4; do not wait for the full runner.
+**Integrate before starting.** Create the proposed validation branch from the tested common base when implementation work resumes. Read [CHALLENGE.md](../CHALLENGE.md), [EVALUATION.md](../EVALUATION.md), [SUBMISSION.md](../SUBMISSION.md) and [RULES.md](../RULES.md). Start tests now, alongside M2/M4; do not wait for the full runner.
 
 **Next work, in priority order.**
 
